@@ -190,8 +190,32 @@ window.addEventListener('DOMContentLoaded', () => {
   const closeOfflineBtn = document.getElementById('close-offline-btn') as HTMLButtonElement;
 
   // 1. Setup save state triggers
-  engine.onStateSaveNeeded = () => {
+  let isTabActive = document.visibilityState === 'visible';
+
+  function handleTabInactive() {
+    if (!isTabActive) return;
+    isTabActive = false;
     OfflineProgression.saveState(engine);
+  }
+
+  function handleTabActive() {
+    if (isTabActive) return;
+    isTabActive = true;
+    const offlineResult = OfflineProgression.loadState(engine);
+    if (offlineResult) {
+      showOfflineModal(offlineResult);
+    }
+    // Save state immediately after loading (whether or not offlineResult was returned)
+    // to update the timestamp in localStorage. This prevents duplicate progression.
+    OfflineProgression.saveState(engine);
+  }
+
+  engine.onStateSaveNeeded = () => {
+    // Only auto-save state if the document is active and visible.
+    // This prevents background frames from updating the localStorage timestamp when tab is hidden.
+    if (isTabActive) {
+      OfflineProgression.saveState(engine);
+    }
   };
   
   // Save when leaving tab
@@ -202,11 +226,22 @@ window.addEventListener('DOMContentLoaded', () => {
     OfflineProgression.saveState(engine);
   });
 
-  // 2. Load existing state and process offline progression
+  // Handle visibility changes (switching tabs or minimizing window)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      handleTabInactive();
+    } else if (document.visibilityState === 'visible') {
+      handleTabActive();
+    }
+  });
+
+  // 2. Load existing state and process offline progression on startup
   const offlineResult = OfflineProgression.loadState(engine);
   if (offlineResult) {
     showOfflineModal(offlineResult);
   }
+  // Save state immediately after initial load to update the timestamp
+  OfflineProgression.saveState(engine);
 
   // Analytics Dashboard UI elements & listeners
   const analyticsToggleBtn = document.getElementById('analytics-toggle-btn') as HTMLButtonElement;
@@ -702,6 +737,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // 7. Core Main Loop
   function tick() {
+    // If the tab is in the background or out of focus, pause all simulation ticks and rendering.
+    // This stops background CPU usage and freezes the state for offline simulation.
+    if (!isTabActive) {
+      requestAnimationFrame(tick);
+      return;
+    }
+
     // Limit frame step dt
     engine.update();
     engine.render();
