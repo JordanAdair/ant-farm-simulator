@@ -5,6 +5,7 @@ import { PheromoneGrid } from './Pheromones';
 import { ColonyManager } from './Colony';
 import { Ant } from './Ant';
 import { TelemetryTracker } from './Telemetry';
+import { Environment } from './Environment';
 
 export interface Fruit {
   id: string;
@@ -47,21 +48,28 @@ export class SimulationEngine {
   public telemetryTracker: TelemetryTracker;
   private telemetryTimer: number = 0;
 
-  // Clock System properties
-  public dayCount: number = 1;
-  public hour: number = 8;
-  public minute: number = 0;
-  public minuteFraction: number = 0;
+  public environment: Environment;
 
-  // Weather System properties
-  public weather: 'Sunny' | 'Rainy' = 'Sunny';
-  public weatherTimer: number = 0;
-  public weatherTargetDuration: number = 9000;
-  public weatherQueue: { type: 'Sunny' | 'Rainy'; durationFrames: number }[] = [];
-  private rainParticles: { x: number; y: number; vx: number; vy: number; len: number }[] = [];
-  private splashParticles: { x: number; y: number; vx: number; vy: number; life: number }[] = [];
-  private starPositions: { x: number; y: number; size: number }[] = [];
-  
+  // Pass-through clock properties
+  public get dayCount(): number { return this.environment.dayCount; }
+  public set dayCount(val: number) { this.environment.dayCount = val; }
+  public get hour(): number { return this.environment.hour; }
+  public set hour(val: number) { this.environment.hour = val; }
+  public get minute(): number { return this.environment.minute; }
+  public set minute(val: number) { this.environment.minute = val; }
+  public get minuteFraction(): number { return this.environment.minuteFraction; }
+  public set minuteFraction(val: number) { this.environment.minuteFraction = val; }
+
+  // Pass-through weather properties
+  public get weather(): 'Sunny' | 'Rainy' { return this.environment.weather; }
+  public set weather(val: 'Sunny' | 'Rainy') { this.environment.weather = val; }
+  public get weatherTimer(): number { return this.environment.weatherTimer; }
+  public set weatherTimer(val: number) { this.environment.weatherTimer = val; }
+  public get weatherTargetDuration(): number { return this.environment.weatherTargetDuration; }
+  public set weatherTargetDuration(val: number) { this.environment.weatherTargetDuration = val; }
+  public get weatherQueue(): { type: 'Sunny' | 'Rainy'; durationFrames: number }[] { return this.environment.weatherQueue; }
+  public set weatherQueue(val: { type: 'Sunny' | 'Rainy'; durationFrames: number }[]) { this.environment.weatherQueue = val; }
+
   // Foliage properties
   public trees: Tree[] = [];
   public grassBlades: GrassBlade[] = [];
@@ -78,129 +86,35 @@ export class SimulationEngine {
   public onStateSaveNeeded: () => void = () => {};
 
   public refillWeatherQueue() {
-    while (this.weatherQueue.length < 5) {
-      const type = Math.random() < 0.35 ? 'Rainy' : 'Sunny';
-      // Sunny lasts 4 to 8 simulated hours (1800 frames per hour)
-      // Rainy lasts 2 to 4 simulated hours
-      const hours = type === 'Sunny' ? (4 + Math.random() * 4) : (2 + Math.random() * 2);
-      this.weatherQueue.push({
-        type,
-        durationFrames: Math.round(hours * 1800),
-      });
-    }
+    this.environment.refillWeatherQueue();
   }
 
   public advanceWeather() {
-    this.refillWeatherQueue();
-    const next = this.weatherQueue.shift()!;
-    this.weather = next.type;
-    this.weatherTargetDuration = next.durationFrames;
-    this.weatherTimer = 0;
-    this.rainParticles = [];
-    this.splashParticles = [];
-    if (this.weather === 'Sunny') {
-      this.colony.addLog('The rain stops and the weather clears up to SUNNY.', 'system');
-    } else {
-      this.colony.addLog('Storm clouds darken the sky. It begins to RAIN.', 'system');
-    }
+    this.environment.advanceWeather((msg, cat) => this.colony.addLog(msg, cat));
   }
 
   public setWeather(newWeather: 'Sunny' | 'Rainy') {
-    if (this.weather === newWeather) return;
-    this.weather = newWeather;
-    this.weatherTimer = 0;
-    this.rainParticles = [];
-    this.splashParticles = [];
-    if (newWeather === 'Sunny') {
-      this.weatherTargetDuration = Math.round((4 + Math.random() * 4) * 1800);
-      this.colony.addLog('The weather clears up and is now SUNNY.', 'system');
-    } else {
-      this.weatherTargetDuration = Math.round((2 + Math.random() * 2) * 1800);
-      this.colony.addLog('Rain clouds roll in. It is now RAINY.', 'system');
-    }
+    this.environment.setWeather(newWeather, (msg, cat) => this.colony.addLog(msg, cat));
   }
 
   public getHumidity(): number {
-    if (this.weather === 'Rainy') {
-      const pct = Math.min(1.0, this.weatherTimer / this.weatherTargetDuration);
-      return Math.round(85 + pct * 13);
-    } else {
-      const pct = this.weatherTimer / this.weatherTargetDuration;
-      if (pct > 0.8) {
-        const stormPct = (pct - 0.8) / 0.2;
-        return Math.round(50 + stormPct * 35);
-      }
-      const dailyCycle = Math.sin((this.hour + this.minute / 60) / 24 * Math.PI * 2);
-      return Math.round(45 + dailyCycle * 10);
-    }
+    return this.environment.getHumidity();
   }
 
   public getPressure(): number {
-    if (this.weather === 'Rainy') {
-      const pct = Math.min(1.0, this.weatherTimer / this.weatherTargetDuration);
-      return Math.round(1002 - pct * 8);
-    } else {
-      const pct = this.weatherTimer / this.weatherTargetDuration;
-      if (pct > 0.8) {
-        const stormPct = (pct - 0.8) / 0.2;
-        return Math.round(1012 - stormPct * 10);
-      }
-      const dailyCycle = Math.cos((this.hour + this.minute / 60) / 24 * Math.PI * 2);
-      return Math.round(1014 + dailyCycle * 3);
-    }
+    return this.environment.getPressure();
   }
 
   public getSkyLight(): number {
-    const time = this.hour + this.minute / 60;
-    if (time >= 4 && time < 8) {
-      const pct = (time - 4) / 4;
-      return 0.08 + pct * 0.92;
-    } else if (time >= 8 && time < 17) {
-      return 1.0;
-    } else if (time >= 17 && time < 21) {
-      const pct = (time - 17) / 4;
-      return 1.0 - pct * 0.92;
-    } else {
-      return 0.08;
-    }
+    return this.environment.getSkyLight();
   }
 
   public getRainDimFactor(): number {
-    if (this.weather === 'Sunny') {
-      return 1.0;
-    }
-    const rainUpdates = this.weatherTimer;
-    const transitionPeriod = 900;
-    if (rainUpdates < transitionPeriod) {
-      const pct = rainUpdates / transitionPeriod;
-      return 1.0 - pct * 0.55;
-    }
-    return 0.45;
+    return this.environment.getRainDimFactor();
   }
 
   public getWeatherForecast(): { type: 'Sunny' | 'Rainy'; durationHours: number; delayHours: number }[] {
-    this.refillWeatherQueue();
-    const forecast: { type: 'Sunny' | 'Rainy'; durationHours: number; delayHours: number }[] = [];
-    
-    const currentRemainingFrames = Math.max(0, this.weatherTargetDuration - this.weatherTimer);
-    forecast.push({
-      type: this.weather,
-      durationHours: Number((currentRemainingFrames / 1800).toFixed(1)),
-      delayHours: 0
-    });
-
-    let cumulativeDelay = currentRemainingFrames;
-    for (let i = 0; i < 3; i++) {
-      const item = this.weatherQueue[i];
-      forecast.push({
-        type: item.type,
-        durationHours: Number((item.durationFrames / 1800).toFixed(1)),
-        delayHours: Number((cumulativeDelay / 1800).toFixed(1))
-      });
-      cumulativeDelay += item.durationFrames;
-    }
-
-    return forecast;
+    return this.environment.getWeatherForecast();
   }
 
   constructor(canvas: HTMLCanvasElement) {
@@ -211,28 +125,12 @@ export class SimulationEngine {
     this.pheromones = new PheromoneGrid();
     this.colony = new ColonyManager(this.grid.nestEntranceCol);
     this.telemetryTracker = new TelemetryTracker();
+    this.environment = new Environment();
 
     // Initial camera coordinates centering on the Queen
     this.camera.x = this.colony.queen.x;
     this.camera.y = this.colony.queen.y;
     this.camera.zoom = 1.0;
-
-    // Initialize stars (scattering within the sky Y bounds)
-    const worldWidth = CONFIG.COLS * CONFIG.CELL_SIZE;
-    const skyHeightPx = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-    for (let i = 0; i < 90; i++) {
-      this.starPositions.push({
-        x: Math.random() * worldWidth,
-        y: Math.random() * (skyHeightPx - 6),
-        size: 0.5 + Math.random() * 1.2,
-      });
-    }
-
-    // Initialize weather queue
-    this.refillWeatherQueue();
-    const current = this.weatherQueue.shift()!;
-    this.weather = current.type;
-    this.weatherTargetDuration = current.durationFrames;
 
     this.initializeFoliage();
     this.resizeCanvas();
@@ -354,112 +252,16 @@ export class SimulationEngine {
       this.telemetryTimer = 0;
     }
 
-    // Clock system updates
-    this.minuteFraction += mult;
-    if (this.minuteFraction >= 30) { // 30 updates = 1 game minute
-      const minutesPassed = Math.floor(this.minuteFraction / 30);
-      this.minuteFraction = this.minuteFraction % 30;
-      this.minute += minutesPassed;
-      if (this.minute >= 60) {
-        const hoursPassed = Math.floor(this.minute / 60);
-        this.minute = this.minute % 60;
-        this.hour += hoursPassed;
-        if (this.hour >= 24) {
-          const daysPassed = Math.floor(this.hour / 24);
-          this.hour = this.hour % 24;
-          this.dayCount += daysPassed;
-          this.colony.addLog(`Day ${this.dayCount} has begun.`, 'system');
-        }
-      }
-    }
-
-    // Weather cycle updates
-    this.weatherTimer += mult;
-    if (this.weather === 'Rainy') {
-      // Rain erosion physics: slowly erode surface mounds
-      // Erode 1 dirt block every 15 frames (average) at 1x speed
-      if (Math.random() < 0.08 * mult) {
-        this.grid.erodeMounds();
-      }
-    }
-    if (this.weatherTimer >= this.weatherTargetDuration) {
-      this.advanceWeather();
-    }
-
-    // Update rain & splash particles
-    const worldWidth = CONFIG.COLS * CONFIG.CELL_SIZE;
-    if (this.weather === 'Rainy') {
-      // Initialize rain particles if empty
-      if (this.rainParticles.length === 0) {
-        for (let i = 0; i < 200; i++) {
-          this.rainParticles.push({
-            x: Math.random() * worldWidth,
-            y: Math.random() * (CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE),
-            vy: 6 + Math.random() * 4,
-            vx: -1.2 - Math.random() * 1.5, // slight wind blowing left
-            len: 8 + Math.random() * 8,
-          });
-        }
-      }
-      
-      // Get viewport boundaries for spawning splashes
-      const halfViewW = (this.canvas.width / this.dpr / this.camera.zoom) / 2;
-      const halfViewH = (this.canvas.height / this.dpr / this.camera.zoom) / 2;
-      const minX = this.camera.x - halfViewW;
-      const maxX = this.camera.x + halfViewW;
-      const minY = this.camera.y - halfViewH;
-      const maxY = this.camera.y + halfViewH;
-
-      this.rainParticles.forEach(p => {
-        p.x += p.vx * mult;
-        p.y += p.vy * mult;
-        
-        // Find surface row for column
-        const col = Math.floor(p.x / CONFIG.CELL_SIZE);
-        let surfaceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-        if (col >= 0 && col < CONFIG.COLS) {
-          for (let r = 0; r < CONFIG.ROWS; r++) {
-            if (this.grid.cells[col][r].type === 'Dirt' || this.grid.cells[col][r].type === 'Rock') {
-              surfaceY = r * CONFIG.CELL_SIZE;
-              break;
-            }
-          }
-        }
-        
-        if (p.y >= surfaceY || p.x < 0) {
-          // Spawn splashes if within view
-          if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY && this.splashParticles.length < 300) {
-            for (let s = 0; s < 2; s++) {
-              this.splashParticles.push({
-                x: p.x,
-                y: surfaceY,
-                vx: (Math.random() - 0.5) * 2,
-                vy: -Math.random() * 1.5 - 1.0,
-                life: 1.0
-              });
-            }
-          }
-          // Wrap particle
-          p.x = Math.random() * (worldWidth + 100);
-          p.y = 0;
-          p.vy = 6 + Math.random() * 4;
-          p.vx = -1.2 - Math.random() * 1.5;
-          p.len = 8 + Math.random() * 8;
-        }
-      });
-    }
-
-    // Update splash particles
-    for (let i = this.splashParticles.length - 1; i >= 0; i--) {
-      const sp = this.splashParticles[i];
-      sp.x += sp.vx * mult;
-      sp.y += sp.vy * mult;
-      sp.vy += 0.15 * mult; // gravity
-      sp.life -= 0.1 * mult;
-      if (sp.life <= 0) {
-        this.splashParticles.splice(i, 1);
-      }
-    }
+    // 3. Environment & Weather updates
+    this.environment.update(
+      mult,
+      this.grid,
+      this.camera,
+      this.canvas.width,
+      this.canvas.height,
+      this.dpr,
+      (msg, cat) => this.colony.addLog(msg, cat)
+    );
 
     // 3. Update colony entities (Queen, Eggs, Larvae, Pupae)
     this.colony.update(mult);
@@ -633,33 +435,7 @@ export class SimulationEngine {
     const endRow = Math.min(CONFIG.ROWS - 1, Math.ceil(maxY / CONFIG.CELL_SIZE));
 
     // 2. Draw Sky background (large enough to cover panning padding)
-    const worldWidth = CONFIG.COLS * CONFIG.CELL_SIZE;
-    const skyHeightPx = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, skyHeightPx);
-    
-    const light = this.getSkyLight() * this.getRainDimFactor();
-    const hue = Math.round(240 - (240 - 205) * light);
-    const satTop = Math.round(this.weather === 'Rainy' ? (10 + 5 * light) : (25 + 30 * light));
-    const satBot = Math.round(this.weather === 'Rainy' ? (8 + 4 * light) : (20 + 25 * light));
-    const lgtTop = Math.max(3, Math.round((this.weather === 'Rainy' ? 22 : 35) * light));
-    const lgtBot = Math.max(1.5, Math.round((this.weather === 'Rainy' ? 10 : 15) * light));
-
-    skyGradient.addColorStop(0, `hsl(${hue}, ${satTop}%, ${lgtTop}%)`);
-    skyGradient.addColorStop(1, `hsl(${hue}, ${satBot}%, ${lgtBot}%)`);
-    
-    ctx.fillStyle = skyGradient;
-    ctx.fillRect(-1000, 0, worldWidth + 2000, skyHeightPx);
-
-    // Render stars if it's dark
-    if (light < 0.4) {
-      ctx.save();
-      const starOpacity = (0.4 - light) / 0.4;
-      ctx.fillStyle = `rgba(255, 255, 255, ${starOpacity * 0.85})`;
-      for (const star of this.starPositions) {
-        ctx.fillRect(star.x, star.y, star.size, star.size);
-      }
-      ctx.restore();
-    }
+    this.environment.renderSky(ctx, minX, maxX, minY, maxY);
 
     // 3. Draw Grid (Dirt, Rock, Food) with Frustum Culling
     for (let c = startCol; c <= endCol; c++) {
@@ -1006,24 +782,7 @@ export class SimulationEngine {
     });
 
     // Draw rain particles and splashes in world viewport coordinates
-    if (this.weather === 'Rainy') {
-      ctx.strokeStyle = 'rgba(156, 180, 215, 0.35)';
-      ctx.lineWidth = 0.9;
-      ctx.beginPath();
-      this.rainParticles.forEach(p => {
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + p.vx * 0.7, p.y + p.len);
-      });
-      ctx.stroke();
-
-      // Splash ripples hitting the surface mounds
-      if (this.splashParticles.length > 0) {
-        ctx.fillStyle = 'rgba(156, 180, 215, 0.55)';
-        this.splashParticles.forEach(sp => {
-          ctx.fillRect(sp.x, sp.y, 1.2, 1.2);
-        });
-      }
-    }
+    this.environment.renderRain(ctx);
 
     // 8. Draw Ant Labels (independent of Diagnostics Grid)
     if (this.showAntNames) {

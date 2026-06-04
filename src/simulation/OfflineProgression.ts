@@ -95,16 +95,16 @@ export class OfflineProgression {
         logs: engine.colony.logs,
         telemetryHistory: engine.telemetryTracker.getHistory(),
         clock: {
-          dayCount: engine.dayCount,
-          hour: engine.hour,
-          minute: engine.minute,
-          minuteFraction: engine.minuteFraction,
+          dayCount: engine.environment.dayCount,
+          hour: engine.environment.hour,
+          minute: engine.environment.minute,
+          minuteFraction: engine.environment.minuteFraction,
         },
         weatherState: {
-          weather: engine.weather,
-          weatherTimer: engine.weatherTimer,
-          weatherTargetDuration: engine.weatherTargetDuration,
-          weatherQueue: engine.weatherQueue,
+          weather: engine.environment.weather,
+          weatherTimer: engine.environment.weatherTimer,
+          weatherTargetDuration: engine.environment.weatherTargetDuration,
+          weatherQueue: engine.environment.weatherQueue,
         }
       };
 
@@ -178,28 +178,28 @@ export class OfflineProgression {
 
       // Restore clock & weather
       if (state.clock) {
-        engine.dayCount = state.clock.dayCount ?? 1;
-        engine.hour = state.clock.hour ?? 8;
-        engine.minute = state.clock.minute ?? 0;
-        engine.minuteFraction = state.clock.minuteFraction ?? 0;
+        engine.environment.dayCount = state.clock.dayCount ?? 1;
+        engine.environment.hour = state.clock.hour ?? 8;
+        engine.environment.minute = state.clock.minute ?? 0;
+        engine.environment.minuteFraction = state.clock.minuteFraction ?? 0;
       } else {
-        engine.dayCount = 1;
-        engine.hour = 8;
-        engine.minute = 0;
-        engine.minuteFraction = 0;
+        engine.environment.dayCount = 1;
+        engine.environment.hour = 8;
+        engine.environment.minute = 0;
+        engine.environment.minuteFraction = 0;
       }
 
       if (state.weatherState) {
-        engine.weather = state.weatherState.weather ?? 'Sunny';
-        engine.weatherTimer = state.weatherState.weatherTimer ?? 0;
-        engine.weatherTargetDuration = state.weatherState.weatherTargetDuration ?? 9000;
-        engine.weatherQueue = state.weatherState.weatherQueue ?? [];
+        engine.environment.weather = state.weatherState.weather ?? 'Sunny';
+        engine.environment.weatherTimer = state.weatherState.weatherTimer ?? 0;
+        engine.environment.weatherTargetDuration = state.weatherState.weatherTargetDuration ?? 9000;
+        engine.environment.weatherQueue = state.weatherState.weatherQueue ?? [];
       } else {
-        engine.weather = 'Sunny';
-        engine.weatherTimer = 0;
-        engine.weatherTargetDuration = 9000;
-        engine.weatherQueue = [];
-        engine.refillWeatherQueue();
+        engine.environment.weather = 'Sunny';
+        engine.environment.weatherTimer = 0;
+        engine.environment.weatherTargetDuration = 9000;
+        engine.environment.weatherQueue = [];
+        engine.environment.refillWeatherQueue();
       }
 
       // Restore excavationPlan (fallback to procedural generation if missing in older saves)
@@ -256,44 +256,46 @@ export class OfflineProgression {
     // Limit maximum offline duration to 3 days to avoid excessive logs/growth
     const duration = Math.min(totalSeconds, CONFIG.MAX_OFFLINE_TIME);
 
+    const env = engine.environment;
+
     // Progress Clock Offline
     const totalSimMinutes = Math.floor(duration * 2);
     const addHours = Math.floor(totalSimMinutes / 60);
     const addMinutes = totalSimMinutes % 60;
 
-    engine.minute += addMinutes;
-    if (engine.minute >= 60) {
-      engine.minute -= 60;
-      engine.hour += 1;
+    env.minute += addMinutes;
+    if (env.minute >= 60) {
+      env.minute -= 60;
+      env.hour += 1;
     }
-    engine.hour += addHours;
-    if (engine.hour >= 24) {
-      engine.dayCount += Math.floor(engine.hour / 24);
-      engine.hour = engine.hour % 24;
+    env.hour += addHours;
+    if (env.hour >= 24) {
+      env.dayCount += Math.floor(env.hour / 24);
+      env.hour = env.hour % 24;
     }
 
     // Progress Weather Queue Offline
     let offlineFramesRemaining = duration * 60;
-    const currentRemaining = Math.max(0, engine.weatherTargetDuration - engine.weatherTimer);
+    const currentRemaining = Math.max(0, env.weatherTargetDuration - env.weatherTimer);
     if (offlineFramesRemaining >= currentRemaining) {
       offlineFramesRemaining -= currentRemaining;
-      engine.refillWeatherQueue();
-      let next = engine.weatherQueue.shift()!;
-      engine.weather = next.type;
-      engine.weatherTargetDuration = next.durationFrames;
-      engine.weatherTimer = 0;
+      env.refillWeatherQueue();
+      let next = env.weatherQueue.shift()!;
+      env.weather = next.type;
+      env.weatherTargetDuration = next.durationFrames;
+      env.weatherTimer = 0;
       
-      while (offlineFramesRemaining >= engine.weatherTargetDuration) {
-        offlineFramesRemaining -= engine.weatherTargetDuration;
-        engine.refillWeatherQueue();
-        next = engine.weatherQueue.shift()!;
-        engine.weather = next.type;
-        engine.weatherTargetDuration = next.durationFrames;
-        engine.weatherTimer = 0;
+      while (offlineFramesRemaining >= env.weatherTargetDuration) {
+        offlineFramesRemaining -= env.weatherTargetDuration;
+        env.refillWeatherQueue();
+        next = env.weatherQueue.shift()!;
+        env.weather = next.type;
+        env.weatherTargetDuration = next.durationFrames;
+        env.weatherTimer = 0;
       }
-      engine.weatherTimer = offlineFramesRemaining;
+      env.weatherTimer = offlineFramesRemaining;
     } else {
-      engine.weatherTimer += offlineFramesRemaining;
+      env.weatherTimer += offlineFramesRemaining;
     }
 
     const colony = engine.colony;
