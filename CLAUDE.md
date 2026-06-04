@@ -21,3 +21,22 @@ Do **NOT** commit or push directly to the `main` branch. For every issue/task:
 *   **Language:** Strict TypeScript with ESM module imports.
 *   **Architecture:** Focus on **Depth** and **Locality**. Create clean, deep interfaces at seams, keeping internal class structures private.
 *   **Documentation:** Update the `CONTEXT.md` glossary when introducing new terms, and add a sequential ADR in `docs/adr/` for major architectural trade-offs.
+
+## Repository Context
+*   **GitHub Repository:** `JordanAdair/ant-farm-simulator`
+*   **URL:** `https://github.com/JordanAdair/ant-farm-simulator`
+*   **Owner:** `JordanAdair`
+*   **Name:** `ant-farm-simulator`
+
+## Agent skills
+
+### Issue tracker
+GitHub repository issues are tracked at `JordanAdair/ant-farm-simulator`. See [issue-tracker.md](file:///home/jordan/.gemini/antigravity/scratch/ant-farm-simulator/docs/agents/issue-tracker.md).
+
+### Triage labels
+Standard triage label names are used. See [triage-labels.md](file:///home/jordan/.gemini/antigravity/scratch/ant-farm-simulator/docs/agents/triage-labels.md).
+
+### Domain docs
+Single-context repository layout. See [domain.md](file:///home/jordan/.gemini/antigravity/scratch/ant-farm-simulator/docs/agents/domain.md).
+
+
