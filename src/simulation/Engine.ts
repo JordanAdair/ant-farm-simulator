@@ -1,9 +1,10 @@
 import { CONFIG } from './types';
-import type { Position, Brood, TelemetryPoint } from './types';
+import type { Position, Brood } from './types';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { ColonyManager } from './Colony';
 import { Ant } from './Ant';
+import { TelemetryTracker } from './Telemetry';
 
 export interface Fruit {
   id: string;
@@ -43,7 +44,7 @@ export class SimulationEngine {
   
   public totalDirtDugGlobal: number = 0;
   private frameCount: number = 0;
-  public telemetryHistory: TelemetryPoint[] = [];
+  public telemetryTracker: TelemetryTracker;
   private telemetryTimer: number = 0;
 
   // Clock System properties
@@ -209,6 +210,7 @@ export class SimulationEngine {
     this.grid = new WorldGrid();
     this.pheromones = new PheromoneGrid();
     this.colony = new ColonyManager(this.grid.nestEntranceCol);
+    this.telemetryTracker = new TelemetryTracker();
 
     // Initial camera coordinates centering on the Queen
     this.camera.x = this.colony.queen.x;
@@ -348,7 +350,7 @@ export class SimulationEngine {
     // Record telemetry periodically
     this.telemetryTimer += mult;
     if (this.telemetryTimer >= 180) { // every 3 seconds (180 frames)
-      this.recordTelemetry();
+      this.telemetryTracker.record(this.colony.getStats(this.grid), this.colony.ants, this.totalDirtDugGlobal);
       this.telemetryTimer = 0;
     }
 
@@ -1492,43 +1494,6 @@ export class SimulationEngine {
     ctx.restore();
   }
 
-  private recordTelemetry() {
-    const stats = this.colony.getStats(this.grid);
-    
-    let totalFitness = 0;
-    let maxFit = 0;
-    const antCount = this.colony.ants.length;
-    this.colony.ants.forEach(a => {
-      const f = a.getFitness();
-      totalFitness += f;
-      if (f > maxFit) maxFit = f;
-    });
-    const avgFit = antCount > 0 ? totalFitness / antCount : 0;
-
-    const lastPoint = this.telemetryHistory[this.telemetryHistory.length - 1];
-    const nextTime = lastPoint ? lastPoint.time + 3 : 0;
-
-    this.telemetryHistory.push({
-      time: nextTime,
-      totalAnts: stats.workerCount,
-      foragers: stats.foragerCount,
-      diggers: stats.diggerCount,
-      nurses: stats.nurseCount,
-      food: stats.foodStockpile,
-      volume: Math.floor(stats.nestVolume * 0.25),
-      dirtDug: this.totalDirtDugGlobal,
-      eggCount: stats.eggCount,
-      larvaCount: stats.larvaCount,
-      pupaCount: stats.pupaCount,
-      avgFitness: parseFloat(avgFit.toFixed(2)),
-      maxFitness: parseFloat(maxFit.toFixed(2)),
-    });
-
-    // Keep last 200 data points (10 minutes history)
-    if (this.telemetryHistory.length > 200) {
-      this.telemetryHistory.shift();
-    }
-  }
 
   public getRandomCanopyPos(): { relX: number; relY: number } {
     for (let attempt = 0; attempt < 100; attempt++) {

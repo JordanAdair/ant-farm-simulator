@@ -93,7 +93,7 @@ export class OfflineProgression {
         })),
         nextAntNum: engine.colony.nextAntNum,
         logs: engine.colony.logs,
-        telemetryHistory: engine.telemetryHistory,
+        telemetryHistory: engine.telemetryTracker.getHistory(),
         clock: {
           dayCount: engine.dayCount,
           hour: engine.hour,
@@ -174,7 +174,7 @@ export class OfflineProgression {
         }
         return entry;
       });
-      engine.telemetryHistory = state.telemetryHistory || [];
+      engine.telemetryTracker.setHistory(state.telemetryHistory || []);
 
       // Restore clock & weather
       if (state.clock) {

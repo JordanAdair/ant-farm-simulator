@@ -279,7 +279,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderColonyCharts() {
-    const history = engine.telemetryHistory;
+    const history = engine.telemetryTracker.getHistory();
     
     // 1. Population
     ColonyCharts.renderLineChart(
@@ -456,7 +456,7 @@ window.addEventListener('DOMContentLoaded', () => {
       engine.pheromones.clear();
       engine.colony.reset(engine.grid.nestEntranceCol);
       engine.totalDirtDugGlobal = 0;
-      engine.telemetryHistory = []; // Clear telemetry history on reset
+      engine.telemetryTracker.setHistory([]); // Clear telemetry history on reset
       
       // Reset clock and weather
       engine.dayCount = 1;
