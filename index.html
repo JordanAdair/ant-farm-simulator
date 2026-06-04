@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐜</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A.N.T.S. - Advanced Nest & Tunneling Simulator</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <!-- Main Game Canvas Container -->
+      <div id="canvas-container">
+        <canvas id="sim-canvas"></canvas>
+      </div>
+
+      <!-- Floating Analytics Trigger Button -->
+      <button id="analytics-toggle-btn" class="glass-floating-btn" title="Toggle Analytics Dashboard">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="chart-icon"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        <span id="analytics-btn-text">Show Analytics</span>
+      </button>
+
+      <!-- Collapsible HUD Overlay -->
+      <div id="hud-sidebar" class="hud-panel">
+        <!-- Sidebar toggle button tab sticking out on the left -->
+        <div id="hud-toggle-tab" class="hud-toggle-tab" title="Toggle Stats Panel">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="toggle-icon"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </div>
+        <div class="hud-header">
+          <div class="title-container">
+            <span class="pulse-indicator"></span>
+            <h1>A.N.T.S.</h1>
+          </div>
+          <p class="subtitle">Colony Simulator v1.0</p>
+        </div>
+
+        <div class="hud-scroll-content">
+          <!-- Stats Section -->
+          <div class="hud-section">
+            <h2>COLONY POPULATION</h2>
+            <div class="stats-grid">
+              <div class="stat-card total-ants">
+                <span class="stat-label">Total Workers</span>
+                <span class="stat-value" id="stat-total-workers">0</span>
+              </div>
+              <div class="stat-card role-foragers">
+                <span class="stat-label">Foragers 🟥</span>
+                <span class="stat-value" id="stat-foragers">0</span>
+              </div>
+              <div class="stat-card role-diggers">
+                <span class="stat-label">Diggers 🟨</span>
+                <span class="stat-value" id="stat-diggers">0</span>
+              </div>
+              <div class="stat-card role-nurses">
+                <span class="stat-label">Nurses 🟦</span>
+                <span class="stat-value" id="stat-nurses">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-section">
+            <h2>RESOURCES & BROOD</h2>
+            <div class="stats-grid">
+              <div class="stat-card resource-food">
+                <span class="stat-label">Food Stockpile</span>
+                <span class="stat-value" id="stat-food">0</span>
+              </div>
+              <div class="stat-card brood-eggs">
+                <span class="stat-label">Eggs ⚪</span>
+                <span class="stat-value" id="stat-eggs">0</span>
+              </div>
+              <div class="stat-card brood-larvae">
+                <span class="stat-label">Larvae 🐛</span>
+                <span class="stat-value" id="stat-larvae">0</span>
+              </div>
+              <div class="stat-card brood-pupae">
+                <span class="stat-label">Pupae 🟤</span>
+                <span class="stat-value" id="stat-pupae">0</span>
+              </div>
+              <div class="stat-card nest-vol">
+                <span class="stat-label">Tunnel Volume</span>
+                <span class="stat-value" id="stat-nest-vol">0 cm³</span>
+              </div>
+              <div class="stat-card dirt-dug">
+                <span class="stat-label">Total Excavated</span>
+                <span class="stat-value" id="stat-total-dug">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Colony Construction Project -->
+          <div class="hud-section">
+            <h2>ACTIVE EXCAVATION PLAN</h2>
+            <div class="stat-card project-card" style="width: 100%; box-sizing: border-box; text-align: center; background: hsla(28, 50%, 15%, 0.15); border: 1px dashed hsla(28, 50%, 30%, 0.3); padding: 8px 12px; border-radius: 8px;">
+              <span class="stat-label" style="display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 2px;">Current Construction Zone</span>
+              <span class="stat-value" id="stat-active-project" style="font-size: 1.05rem; color: hsl(38, 90%, 65%); font-weight: 600; text-shadow: 0 0 8px hsla(38, 90%, 60%, 0.25);">Extending Main Shaft</span>
+            </div>
+          </div>
+
+
+
+          <!-- Weather & Clock Section -->
+          <div class="hud-section">
+            <h2>ENVIRONMENT & FORECAST</h2>
+            <div class="clock-display-card">
+              <div class="clock-time-row">
+                <span class="clock-icon" id="clock-sun-moon">☀️</span>
+                <span class="clock-time" id="clock-time-text">08:00</span>
+                <span class="clock-day" id="clock-day-text">Day 1</span>
+              </div>
+              <div class="weather-telemetry-row">
+                <div class="weather-tel-item">
+                  <span class="tel-label">BAROMETER</span>
+                  <span class="tel-value" id="weather-pressure-text">1013 hPa</span>
+                </div>
+                <div class="weather-tel-item">
+                  <span class="tel-label">HUMIDITY</span>
+                  <span class="tel-value" id="weather-humidity-text">45%</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="forecast-container">
+              <span class="forecast-title">WEATHER OUTLOOK</span>
+              <div class="forecast-timeline" id="forecast-timeline-list">
+                <!-- Forecast items injected dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-section">
+            <h2>VISUALIZATION SETTINGS</h2>
+            <div class="toggle-group">
+              <label class="switch-label">
+                <input type="checkbox" id="toggle-pheromones" checked />
+                <span class="switch-custom"></span>
+                Show Pheromone Trails
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="toggle-names" checked />
+                <span class="switch-custom"></span>
+                Show Ant Labels
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="toggle-debug" checked />
+                <span class="switch-custom"></span>
+                Enable Diagnostics Grid
+              </label>
+            </div>
+          </div>
+
+
+          
+
+
+          <div class="hud-section action-section">
+            <button id="reset-sim-btn" class="danger-btn">RESET COLONY</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Colony Log Component -->
+      <div id="log-panel" class="log-panel">
+        <div class="log-resize-handle" id="log-resize-handle"></div>
+        <div class="log-panel-header">
+          <div class="log-header-left">
+            <div class="log-title-container">
+              <span class="log-indicator"></span>
+              <h2>COLONY LOGS & EVENTS</h2>
+              <span id="log-count" class="log-count">0 events</span>
+            </div>
+            <!-- Log Filters -->
+            <div class="log-filters">
+              <button class="filter-btn active" data-filter="all">ALL</button>
+              <button class="filter-btn" data-filter="system">SYSTEM</button>
+              <button class="filter-btn" data-filter="births">BIRTHS</button>
+              <button class="filter-btn" data-filter="deaths">DEATHS</button>
+            </div>
+          </div>
+
+          <!-- Speed Controls -->
+          <div class="speed-controls">
+            <button id="speed-pause" class="speed-btn" data-speed="0">PAUSE</button>
+            <button id="speed-1x" class="speed-btn active" data-speed="1">1X</button>
+            <button id="speed-2x" class="speed-btn" data-speed="2">2X</button>
+            <button id="speed-5x" class="speed-btn" data-speed="5">5X</button>
+          </div>
+        </div>
+        <div id="log-container" class="log-stream-bottom">
+          <!-- Logs dynamic entry -->
+        </div>
+      </div>
+
+      <!-- Analytics & Charts Modal Overlay -->
+      <div id="charts-modal" class="modal-overlay hidden">
+        <div class="modal-card wide-card">
+          <div class="modal-header-row">
+            <div class="modal-header-title">
+              <span class="modal-icon">📊</span>
+              <h2>Colony Analytics & Telemetry</h2>
+            </div>
+            <button id="close-charts-btn" class="close-btn" title="Close Dashboard">&times;</button>
+          </div>
+          
+          <div class="charts-grid-container">
+            <div class="chart-wrapper">
+              <canvas id="chart-population"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="chart-resources"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="chart-excavation"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="chart-brood"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="chart-fitness"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="chart-generations"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Welcome / Offline Progress Summary Modal -->
+      <div id="offline-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+          <div class="modal-header">
+            <span class="modal-icon">🐜</span>
+            <h2>Colony Offline Progress</h2>
+          </div>
+          <p class="modal-desc">While the tab was inactive, your ant farm continued survival and tunnel work for <span id="offline-time" class="highlight-text">0 hours</span>.</p>
+          
+          <div class="offline-stats-grid">
+            <div class="offline-stat">
+              <span class="stat-diff-label">Food Foraged</span>
+              <span class="stat-diff-val positive" id="offline-food-gathered">+0</span>
+            </div>
+            <div class="offline-stat">
+              <span class="stat-diff-label">Food Consumed</span>
+              <span class="stat-diff-val negative" id="offline-food-consumed">-0</span>
+            </div>
+            <div class="offline-stat">
+              <span class="stat-diff-label">New Ants Hatched</span>
+              <span class="stat-diff-val positive" id="offline-ants-born">+0</span>
+            </div>
+            <div class="offline-stat">
+              <span class="stat-diff-label">Tunnels Excavated</span>
+              <span class="stat-diff-val positive" id="offline-dirt-dug">+0 cells</span>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="close-offline-btn" class="primary-btn">Resume Observation</button>
+          </div>
+        </div>
+      </div>
+      <!-- Clickable Apple Info Popup -->
+      <div id="apple-popup" class="apple-popup hidden">
+        <button id="apple-popup-close" class="apple-popup-close">&times;</button>
+        <div class="apple-popup-content">
+          <div class="apple-popup-title">🍎 Apple</div>
+          <div class="apple-popup-status" id="apple-popup-status">Ripening...</div>
+          <div class="apple-popup-progress-container">
+            <div class="apple-popup-progress-bar" id="apple-popup-progress-bar"></div>
+          </div>
+          <div class="apple-popup-time" id="apple-popup-time">Ready in 0.0 hours</div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

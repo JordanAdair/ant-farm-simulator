@@ -1,0 +1,333 @@
+import { CONFIG } from './types';
+import type { CellType, Position } from './types';
+
+export interface Cell {
+  type: CellType;
+  foodAmount: number;
+  noiseVal: number; // for visual grit texturing
+  durability?: number; // rock durability (5 hits to clear)
+}
+
+export class WorldGrid {
+  public cols: number;
+  public rows: number;
+  public cells: Cell[][];
+  public nestEntranceCol: number;
+
+  constructor() {
+    this.cols = CONFIG.COLS;
+    this.rows = CONFIG.ROWS;
+    this.nestEntranceCol = Math.floor(this.cols / 2);
+    this.cells = [];
+    this.initializeGrid();
+  }
+
+  private initializeGrid() {
+    this.cells = [];
+    for (let c = 0; c < this.cols; c++) {
+      this.cells[c] = [];
+      for (let r = 0; r < this.rows; r++) {
+        let type: CellType = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'Dirt';
+        this.cells[c][r] = {
+          type,
+          foodAmount: 0,
+          noiseVal: Math.random(),
+        };
+      }
+    }
+
+    // Generate randomly scattered, less abundant rock-like clusters
+    // We spawn 45 irregular clusters below the sky height + 15 row limit
+    const numClusters = 45;
+    for (let i = 0; i < numClusters; i++) {
+      // Pick a random center cell away from the grid edges
+      const centerCol = Math.floor(15 + Math.random() * (this.cols - 30));
+      const centerRow = Math.floor((CONFIG.SKY_HEIGHT + 18) + Math.random() * (this.rows - (CONFIG.SKY_HEIGHT + 28)));
+      
+      // Random ellipsoid radii (in cells)
+      const radiusX = 2.0 + Math.random() * 4.0;
+      const radiusY = 1.5 + Math.random() * 3.0;
+      
+      const searchRadiusX = Math.ceil(radiusX + 1);
+      const searchRadiusY = Math.ceil(radiusY + 1);
+      for (let dc = -searchRadiusX; dc <= searchRadiusX; dc++) {
+        for (let dr = -searchRadiusY; dr <= searchRadiusY; dr++) {
+          const tc = centerCol + dc;
+          const tr = centerRow + dr;
+          if (this.isValid(tc, tr) && tr >= CONFIG.SKY_HEIGHT + 12) {
+            const dx = dc;
+            const dy = dr;
+            // Ellipse distance formula + small organic boundary noise
+            const dist = (dx / radiusX) ** 2 + (dy / radiusY) ** 2;
+            const noise = (Math.random() - 0.5) * 0.15;
+            
+            if (dist + noise <= 1.0) {
+              this.cells[tc][tr].type = 'Rock';
+              this.cells[tc][tr].durability = 5;
+            }
+          }
+        }
+      }
+    }
+
+    // Build the initial nest starting chamber for the Queen
+    this.buildInitialNest();
+  }
+
+  private buildInitialNest() {
+    const entranceCol = this.nestEntranceCol;
+    const skyHeight = CONFIG.SKY_HEIGHT;
+
+    // 1. Vertical main shaft (straight and clean)
+    const shaftDepth = 22;
+    for (let r = skyHeight; r < skyHeight + shaftDepth; r++) {
+      for (let c = entranceCol - 2; c <= entranceCol + 1; c++) {
+        if (this.isValid(c, r)) {
+          this.clearCell(c, r);
+        }
+      }
+    }
+
+    // 2. Central Queen chamber (bottom of the shaft, rounded corners)
+    const chamberRow = skyHeight + shaftDepth;
+    const chamberHalfWidth = 16;
+    const chamberHeight = 8;
+    for (let c = entranceCol - chamberHalfWidth; c <= entranceCol + chamberHalfWidth; c++) {
+      for (let r = chamberRow; r < chamberRow + chamberHeight; r++) {
+        if (this.isValid(c, r)) {
+          const dx = Math.min(c - (entranceCol - chamberHalfWidth), (entranceCol + chamberHalfWidth) - c);
+          const dy = Math.min(r - chamberRow, (chamberRow + chamberHeight - 1) - r);
+          if (dx < 6 && dy < 3) {
+            const dist = (6 - dx) ** 2 + (3 - dy) ** 2;
+            if (dist > 25) {
+              continue; // Skip clearing this cell to round the chamber corner
+            }
+          }
+          this.clearCell(c, r);
+        }
+      }
+    }
+
+    // Spawn some initial food at the surface (fallen apples)
+    this.spawnFoodAt(entranceCol - 25, skyHeight - 1, 300); // near nest (Col 175)
+    this.spawnFoodAt(entranceCol - 120, skyHeight - 1, 250); // under outer canopy of tree 1 (Col 80)
+    this.spawnFoodAt(entranceCol + 60, skyHeight - 1, 250); // under outer canopy of tree 2 (Col 260)
+    this.spawnFoodAt(entranceCol + 155, skyHeight - 1, 250); // under outer canopy of tree 3 (Col 355)
+  }
+
+  public isValid(col: number, row: number): boolean {
+    return col >= 0 && col < this.cols && row >= 0 && row < this.rows;
+  }
+
+  public getCell(col: number, row: number): Cell | null {
+    if (!this.isValid(col, row)) return null;
+    return this.cells[col][row];
+  }
+
+  public clearCell(col: number, row: number) {
+    if (this.isValid(col, row)) {
+      this.cells[col][row].type = 'NestAir';
+      this.cells[col][row].foodAmount = 0;
+    }
+  }
+
+  public setCellType(col: number, row: number, type: CellType) {
+    if (this.isValid(col, row)) {
+      this.cells[col][row].type = type;
+      if (type !== 'Food') {
+        this.cells[col][row].foodAmount = 0;
+      }
+    }
+  }
+
+  public isWalkable(col: number, row: number): boolean {
+    const cell = this.getCell(col, row);
+    if (!cell) return false;
+    return cell.type === 'NestAir' || cell.type === 'Sky' || cell.type === 'Food';
+  }
+
+  public isDiggable(col: number, row: number): boolean {
+    const cell = this.getCell(col, row);
+    if (!cell) return false;
+    return cell.type === 'Dirt' || cell.type === 'Rock';
+  }
+
+  public digCell(col: number, row: number): boolean {
+    if (!this.isValid(col, row)) return false;
+    const cell = this.cells[col][row];
+    if (cell.type === 'Dirt') {
+      cell.type = 'NestAir';
+      return true;
+    } else if (cell.type === 'Rock') {
+      if (cell.durability === undefined) {
+        cell.durability = 5;
+      }
+      cell.durability--;
+      if (cell.durability <= 0) {
+        cell.type = 'NestAir';
+        return true;
+      }
+      return true; // Still returns true so the digger carries rock debris (dirt) away
+    }
+    return false;
+  }
+
+  public spawnFoodAt(col: number, row: number, amount: number) {
+    // Fill a small cluster with food cells
+    const radius = 3;
+    for (let c = col - radius; c <= col + radius; c++) {
+      for (let r = row - radius; r <= row; r++) {
+        if (this.isValid(c, r) && this.cells[c][r].type === 'Sky') {
+          // Put food on top of surface
+          const dist = Math.sqrt((c - col) ** 2 + (r - row) ** 2);
+          if (dist < radius && Math.random() > 0.15) {
+            this.cells[c][r].type = 'Food';
+            this.cells[c][r].foodAmount = amount;
+          }
+        }
+      }
+    }
+  }
+
+
+
+  // Find nearest food cell
+  public getClosestFood(posX: number, posY: number): Position | null {
+    const col = Math.floor(posX / CONFIG.CELL_SIZE);
+    const row = Math.floor(posY / CONFIG.CELL_SIZE);
+
+    let closestDist = Infinity;
+    let closestPos: Position | null = null;
+
+    // Broad search in a window
+    const searchRadius = 40;
+    const startC = Math.max(0, col - searchRadius);
+    const endC = Math.min(this.cols - 1, col + searchRadius);
+    const startR = Math.max(0, row - searchRadius);
+    const endR = Math.min(this.rows - 1, row + searchRadius);
+
+    for (let c = startC; c <= endC; c++) {
+      for (let r = startR; r <= endR; r++) {
+        if (this.cells[c][r].type === 'Food' && this.cells[c][r].foodAmount > 0) {
+          const dx = c - col;
+          const dy = r - row;
+          const distSq = dx * dx + dy * dy;
+          if (distSq < closestDist) {
+            closestDist = distSq;
+            closestPos = {
+              x: c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2,
+              y: r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2,
+            };
+          }
+        }
+      }
+    }
+    return closestPos;
+  }
+
+  // Find the surface height for a column (row index of the highest solid block)
+  public getSurfaceRow(c: number): number {
+    for (let r = 0; r < this.rows; r++) {
+      if (this.cells[c][r].type === 'Dirt' || this.cells[c][r].type === 'Rock') {
+        return r;
+      }
+    }
+    return this.rows;
+  }
+
+  // Deposit dirt on surface to form mounds with natural sloped profiles
+  public depositDirt(fromCol: number) {
+    // Drop the dirt exactly where the ant is (fromCol)
+    let col = Math.max(2, Math.min(this.cols - 3, fromCol));
+
+    // Ensure it is outside the entrance buffer zone (minimum distance of 8 cells)
+    // to prevent dirt from settling directly inside the shaft opening or sliding into it.
+    if (col < this.nestEntranceCol && col > this.nestEntranceCol - 8) {
+      col = this.nestEntranceCol - 8;
+    } else if (col >= this.nestEntranceCol && col < this.nestEntranceCol + 8) {
+      col = this.nestEntranceCol + 8;
+    }
+
+    // Find the surface height for a column (row index of the highest solid block)
+    const getSurfaceRow = (c: number): number => this.getSurfaceRow(c);
+
+    // Simulate soil sliding (avalanche) to enforce natural angle of repose
+    let settled = false;
+    for (let steps = 0; steps < 15 && !settled; steps++) {
+      const currentR = getSurfaceRow(col);
+      const leftR = getSurfaceRow(col - 1);
+      const rightR = getSurfaceRow(col + 1);
+
+      // Lower row index means physically higher.
+      // If current column is 2 or more blocks higher than left, slide left
+      if (currentR < leftR - 1 && col > 2) {
+        // Prevent sliding into the nest entrance shaft buffer
+        const nextCol = col - 1;
+        if (Math.abs(nextCol - this.nestEntranceCol) >= 8) {
+          col--;
+        } else {
+          settled = true;
+        }
+      }
+      // If current column is 2 or more blocks higher than right, slide right
+      else if (currentR < rightR - 1 && col < this.cols - 3) {
+        // Prevent sliding into the nest entrance shaft buffer
+        const nextCol = col + 1;
+        if (Math.abs(nextCol - this.nestEntranceCol) >= 8) {
+          col++;
+        } else {
+          settled = true;
+        }
+      }
+      else {
+        settled = true;
+      }
+    }
+
+    // Drop the dirt at the settled column
+    const finalR = getSurfaceRow(col);
+    if (finalR > 0) {
+      this.cells[col][finalR - 1].type = 'Dirt';
+      this.cells[col][finalR - 1].noiseVal = Math.random();
+    }
+  }
+
+  // Slow mound erosion for Rainy weather conditions
+  public erodeMounds() {
+    const candidates: number[] = [];
+    for (let c = 0; c < this.cols; c++) {
+      for (let r = 0; r < CONFIG.SKY_HEIGHT; r++) {
+        if (this.cells[c][r].type === 'Dirt') {
+          candidates.push(c);
+          break;
+        }
+      }
+    }
+
+    if (candidates.length === 0) return;
+
+    // Select a random column with a mound
+    const col = candidates[Math.floor(Math.random() * candidates.length)];
+
+    // Find the topmost dirt cell and erode it back to Sky
+    for (let r = 0; r < CONFIG.SKY_HEIGHT; r++) {
+      if (this.cells[col][r].type === 'Dirt') {
+        this.cells[col][r].type = 'Sky';
+        break;
+      }
+    }
+  }
+
+  // Count empty spaces underground (for nest volume stats)
+  public getNestVolume(): number {
+    let volume = 0;
+    for (let c = 0; c < this.cols; c++) {
+      for (let r = CONFIG.SKY_HEIGHT; r < this.rows; r++) {
+        if (this.cells[c][r].type === 'NestAir') {
+          volume++;
+        }
+      }
+    }
+    return volume;
+  }
+}
