@@ -114,27 +114,8 @@ export interface ExcavationStep {
   maxCol: number;
   minRow: number;
   maxRow: number;
-}
-
-export function isCellInsidePlanStep(step: ExcavationStep, c: number, r: number): boolean {
-  if (c < step.minCol || c > step.maxCol || r < step.minRow || r > step.maxRow) {
-    return false;
-  }
-
-  // Round corners only for Chambers and Annexes to avoid blocking connections at shafts/link corridors
-  const isChamberOrAnnex = step.name.includes('Chamber') || step.name.includes('Annex');
-  if (isChamberOrAnnex) {
-    const dx = Math.min(c - step.minCol, step.maxCol - c);
-    const dy = Math.min(r - step.minRow, step.maxRow - r);
-    if (dx < 3 && dy < 2) {
-      const dist = (3 - dx) ** 2 + (2 - dy) ** 2;
-      if (dist > 5) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+  entranceCol?: number;
+  baselineRow?: number;
 }
 
 

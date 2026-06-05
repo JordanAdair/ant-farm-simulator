@@ -3,6 +3,7 @@ import type { CellType, AntRole } from './types';
 import { WorldGrid } from './Grid';
 import { SimulationEngine } from './Engine';
 import { Ant, createDefaultBrain } from './Ant';
+import { generateProceduralNestPlan } from './NestPlanner';
 
 export interface OfflineResult {
   elapsedSeconds: number;
@@ -206,7 +207,7 @@ export class OfflineProgression {
       if (state.excavationPlan && state.excavationPlan.length > 0) {
         engine.colony.excavationPlan = state.excavationPlan;
       } else {
-        engine.colony.excavationPlan = engine.colony.generateProceduralNestPlan(engine.grid.nestEntranceCol);
+        engine.colony.excavationPlan = generateProceduralNestPlan(engine.grid.nestEntranceCol);
       }
 
       // 3. Restore Ants

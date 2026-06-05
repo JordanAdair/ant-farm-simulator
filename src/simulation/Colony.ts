@@ -1,7 +1,8 @@
-import { CONFIG, isCellInsidePlanStep } from './types';
+import { CONFIG } from './types';
 import type { Brood, AntRole, ExcavationStep, Position, AntBrain, LogEntry } from './types';
 import { Ant, createDefaultBrain } from './Ant';
 import { WorldGrid } from './Grid';
+import { generateProceduralNestPlan, isCellInsidePlanStep } from './NestPlanner';
 
 export class ColonyManager {
   public foodStockpile: number = 50; // starts with a little food
@@ -28,7 +29,7 @@ export class ColonyManager {
     };
 
     // Generate procedural nest plan
-    this.excavationPlan = this.generateProceduralNestPlan(entranceCol);
+    this.excavationPlan = generateProceduralNestPlan(entranceCol);
 
     // Spawn initial workers
     this.spawnInitialColony(startX, startY);
@@ -320,159 +321,6 @@ export class ColonyManager {
     return 'Nurse';
   }
 
-  // Procedurally generate a perfectly straight, tiered excavation structure
-  public generateProceduralNestPlan(entranceCol: number): ExcavationStep[] {
-    const plan: ExcavationStep[] = [];
-    let currentRow = CONFIG.SKY_HEIGHT + 30; // Start below the starting Queen's chamber
-    
-    // We procedurally generate 8 levels (tiers) of construction
-    for (let L = 1; L <= 8; L++) {
-      const startRow = currentRow;
-      const endRow = Math.min(CONFIG.ROWS - 5, currentRow + 20);
-      currentRow = endRow;
-      
-      // 1. Extend Shaft (perfectly straight shaft cols 198 to 201)
-      plan.push({
-        name: `Extend Shaft (Tier ${L})`,
-        minCol: entranceCol - 2,
-        maxCol: entranceCol + 1,
-        minRow: startRow,
-        maxRow: endRow
-      });
-      
-      // 2. Decide branching (0: Left only, 1: Right only, 2: Both sides)
-      const layout = Math.floor(Math.random() * 3);
-      const hasLeft = layout === 0 || layout === 2;
-      const hasRight = layout === 1 || layout === 2;
-      
-      // Center the horizontal elements vertically inside the tier height
-      const pRow = startRow + 10;
-      
-      if (hasLeft) {
-        // Create left passage (3 cells high)
-        const pLen = 15 + Math.floor(Math.random() * 5); // passage length 15 to 19 cells
-        const passMinC = Math.max(5, entranceCol - pLen);
-        const passMaxC = entranceCol - 3;
-        
-        plan.push({
-          name: `Left Passage (Tier ${L})`,
-          minCol: passMinC,
-          maxCol: passMaxC,
-          minRow: pRow - 1,
-          maxRow: pRow + 1
-        });
-        
-        // Create left chamber (Nursery, 6 to 9 cells high, aligned)
-        const cWidth = 14 + Math.floor(Math.random() * 6);
-        const cHeight = 7 + Math.floor(Math.random() * 2); // 7 or 8 cells high
-        const chamMinC = Math.max(5, passMinC - cWidth);
-        const chamMaxC = passMinC;
-        const chamMinR = pRow - Math.floor(cHeight / 2);
-        const chamMaxR = chamMinR + cHeight - 1;
-        
-        plan.push({
-          name: `Left Nursery Chamber (Tier ${L})`,
-          minCol: chamMinC,
-          maxCol: chamMaxC,
-          minRow: chamMinR,
-          maxRow: chamMaxR
-        });
-        
-        // Chain a second chamber (Annex)? (40% chance)
-        if (Math.random() < 0.40 && chamMinC > 30) {
-          const chainPLen = 10 + Math.floor(Math.random() * 5);
-          const chainMinC = Math.max(5, chamMinC - chainPLen);
-          const chainMaxC = chamMinC - 1;
-          
-          plan.push({
-            name: `Left Nursery Link (Tier ${L})`,
-            minCol: chainMinC,
-            maxCol: chainMaxC,
-            minRow: pRow - 1,
-            maxRow: pRow + 1
-          });
-          
-          const chainCW = 12 + Math.floor(Math.random() * 5);
-          const chainCH = 6 + Math.floor(Math.random() * 3);
-          const chainChamMinC = Math.max(5, chainMinC - chainCW);
-          const chainChamMaxC = chainMinC;
-          const chainMinR = pRow - Math.floor(chainCH / 2);
-          const chainMaxR = chainMinR + chainCH - 1;
-          
-          plan.push({
-            name: `Left Nursery Annex (Tier ${L})`,
-            minCol: chainChamMinC,
-            maxCol: chainChamMaxC,
-            minRow: chainMinR,
-            maxRow: chainMaxR
-          });
-        }
-      }
-      
-      if (hasRight) {
-        // Create right passage (3 cells high)
-        const pLen = 15 + Math.floor(Math.random() * 5);
-        const passMinC = entranceCol + 2;
-        const passMaxC = Math.min(CONFIG.COLS - 6, entranceCol + pLen);
-        
-        plan.push({
-          name: `Right Passage (Tier ${L})`,
-          minCol: passMinC,
-          maxCol: passMaxC,
-          minRow: pRow - 1,
-          maxRow: pRow + 1
-        });
-        
-        // Create right chamber (Larder, 6 to 9 cells high, aligned)
-        const cWidth = 14 + Math.floor(Math.random() * 6);
-        const cHeight = 7 + Math.floor(Math.random() * 2);
-        const chamMinC = passMaxC;
-        const chamMaxC = Math.min(CONFIG.COLS - 6, passMaxC + cWidth);
-        const chamMinR = pRow - Math.floor(cHeight / 2);
-        const chamMaxR = chamMinR + cHeight - 1;
-        
-        plan.push({
-          name: `Right Larder Chamber (Tier ${L})`,
-          minCol: chamMinC,
-          maxCol: chamMaxC,
-          minRow: chamMinR,
-          maxRow: chamMaxR
-        });
-        
-        // Chain a second chamber (Annex)? (40% chance)
-        if (Math.random() < 0.40 && chamMaxC < CONFIG.COLS - 30) {
-          const chainPLen = 10 + Math.floor(Math.random() * 5);
-          const chainMinC = chamMaxC + 1;
-          const chainMaxC = Math.min(CONFIG.COLS - 6, chamMaxC + chainPLen);
-          
-          plan.push({
-            name: `Right Larder Link (Tier ${L})`,
-            minCol: chainMinC,
-            maxCol: chainMaxC,
-            minRow: pRow - 1,
-            maxRow: pRow + 1
-          });
-          
-          const chainCW = 12 + Math.floor(Math.random() * 5);
-          const chainCH = 6 + Math.floor(Math.random() * 3);
-          const chainChamMinC = chainMaxC;
-          const chainChamMaxC = Math.min(CONFIG.COLS - 6, chainMaxC + chainCW);
-          const chainMinR = pRow - Math.floor(chainCH / 2);
-          const chainMaxR = chainMinR + chainCH - 1;
-          
-          plan.push({
-            name: `Right Larder Annex (Tier ${L})`,
-            minCol: chainChamMinC,
-            maxCol: chainChamMaxC,
-            minRow: chainMinR,
-            maxRow: chainMaxR
-          });
-        }
-      }
-    }
-    
-    return plan;
-  }
 
   public getActiveExcavationStep(grid: WorldGrid): ExcavationStep | null {
     for (let i = 0; i < this.excavationPlan.length; i++) {
@@ -582,7 +430,7 @@ export class ColonyManager {
       restTimer: 0,
     };
     
-    this.excavationPlan = this.generateProceduralNestPlan(entranceCol);
+    this.excavationPlan = generateProceduralNestPlan(entranceCol);
     this.spawnInitialColony(startX, startY);
     this.logs = [];
     this.addLog('Colony reset. A new Queen has arrived.', 'system');

@@ -1,5 +1,6 @@
-import { CONFIG, isCellInsidePlanStep } from './types';
+import { CONFIG } from './types';
 import type { AntRole, AntState, Position, ExcavationStep, AntBrain } from './types';
+import { isCellInsidePlanStep, getShaftCenterCol } from './NestPlanner';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 
@@ -940,9 +941,10 @@ export class Ant {
     const targetRow = Math.floor(targetY / CELL_SIZE);
     const skyRow = CONFIG.SKY_HEIGHT;
 
-    const shaftColStart = grid.nestEntranceCol - 2;
-    const shaftColEnd = grid.nestEntranceCol + 1;
-    const shaftMidX = (grid.nestEntranceCol * CELL_SIZE) + (CELL_SIZE / 2);
+    const currentShaftCenter = getShaftCenterCol(curRow, grid.nestEntranceCol);
+    const shaftColStart = currentShaftCenter - 2;
+    const shaftColEnd = currentShaftCenter + 1;
+    const shaftMidX = (currentShaftCenter * CELL_SIZE) + (CELL_SIZE / 2);
 
     // If both the ant and the target are above the surface, steer directly
     if (curRow < skyRow && targetRow < skyRow) {
@@ -968,9 +970,15 @@ export class Ant {
     // If the ant is underground and the target is on the surface:
     // It must first climb up the shaft to the surface
     if (curRow >= skyRow && targetRow < skyRow) {
-      // If we are in the shaft, go straight up
+      // If we are in the shaft, follow it up
       if (curCol >= shaftColStart && curCol <= shaftColEnd) {
-        return -Math.PI / 2; // Go straight up
+        const nextRow = Math.max(skyRow, curRow - 4);
+        const targetShaftCenterCol = getShaftCenterCol(nextRow, grid.nestEntranceCol);
+        const targetShaftX = targetShaftCenterCol * CELL_SIZE + CELL_SIZE / 2;
+        const targetShaftY = nextRow * CELL_SIZE + CELL_SIZE / 2;
+        const dx = targetShaftX - this.x;
+        const dy = targetShaftY - this.y;
+        return Math.atan2(dy, dx);
       } else {
         // We are in a side chamber, walk horizontally towards the shaft
         const dx = shaftMidX - this.x;
@@ -983,10 +991,15 @@ export class Ant {
 
     if (inShaft) {
       // If we are in the shaft:
-      // If we need to go to a different height, move vertically
+      // If we need to go to a different height, follow the shaft center
       if (Math.abs(curRow - targetRow) > 2) {
-        const dy = targetY - this.y;
-        return Math.atan2(dy, 0); // Move vertically (dx = 0) within the shaft
+        const nextRow = curRow + Math.sign(targetRow - curRow) * 4;
+        const targetShaftCenterCol = getShaftCenterCol(nextRow, grid.nestEntranceCol);
+        const targetShaftX = targetShaftCenterCol * CELL_SIZE + CELL_SIZE / 2;
+        const targetShaftY = nextRow * CELL_SIZE + CELL_SIZE / 2;
+        const dx = targetShaftX - this.x;
+        const dy = targetShaftY - this.y;
+        return Math.atan2(dy, dx);
       } else {
         // We are at the correct height, steer towards target
         const dx = targetX - this.x;
