@@ -796,8 +796,13 @@ export class Ant {
 
     const output = Math.tanh(sum);
 
-    // Steer by up to 0.15 radians
-    this.angle += output * 0.15 * speedMultiplier;
+    // If following a strict A* path, bypass the neural network to avoid wide turns and wall crashes
+    if (this.currentPath && this.currentPath.length > 0) {
+      this.steerTowardsAngle(this.desiredAngle, 1.0); // instant snap
+    } else {
+      // Steer using neural network by up to 0.15 radians
+      this.angle += output * 0.15 * speedMultiplier;
+    }
     this.normalizeAngle();
   }
 
@@ -1022,10 +1027,14 @@ export class Ant {
       const nextWP = this.currentPath[0];
       const dx = nextWP.x - this.x;
       const dy = nextWP.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
       
-      // If we reached the waypoint, pop it
-      if (dist < CELL_SIZE * 1.5) {
+      const curCol = Math.floor(this.x / CELL_SIZE);
+      const curRow = Math.floor(this.y / CELL_SIZE);
+      const wpCol = Math.floor(nextWP.x / CELL_SIZE);
+      const wpRow = Math.floor(nextWP.y / CELL_SIZE);
+
+      // Pop the waypoint if we've entered its cell, or if we're extremely close
+      if ((curCol === wpCol && curRow === wpRow) || (dx * dx + dy * dy < CELL_SIZE * CELL_SIZE)) {
         this.currentPath.shift();
         if (this.currentPath.length > 0) {
           const nextNext = this.currentPath[0];
