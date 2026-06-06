@@ -797,8 +797,8 @@ export class Ant {
     const output = Math.tanh(sum);
 
     // If following a strict A* path, bypass the neural network to avoid wide turns and wall crashes
-    if (this.currentPath && this.currentPath.length > 0) {
-      this.steerTowardsAngle(this.desiredAngle, 1.0); // instant snap
+    if (this.currentPath && this.currentPath.length > 0 && this.collisionCooldown <= 0) {
+      this.angle = this.desiredAngle; // instant snap
     } else {
       // Steer using neural network by up to 0.15 radians
       this.angle += output * 0.15 * speedMultiplier;
@@ -815,10 +815,10 @@ export class Ant {
     if (grid.isValid(currentCol, currentRow)) {
       const currentCell = grid.getCell(currentCol, currentRow);
       if (currentCell && (currentCell.type === 'Sky' || currentCell.type === 'Food')) {
-        // Check for solid support in a 5x2 region (horizontal range of 2 cells, vertical range from currentRow to currentRow + 1)
-        // This gives ants enough wall-clinging range to navigate steep mounds and narrow valley gaps without losing support due to wandering
+        // Check for solid support directly underneath or just 1 cell adjacent (3x2 region)
+        // This gives ants basic wall-clinging without letting them float across 4-cell wide holes
         let hasSupport = false;
-        for (let dc = -2; dc <= 2; dc++) {
+        for (let dc = -1; dc <= 1; dc++) {
           for (let dr = 0; dr <= 1; dr++) {
             if (grid.isValid(currentCol + dc, currentRow + dr)) {
               if (!grid.isWalkable(currentCol + dc, currentRow + dr)) {
