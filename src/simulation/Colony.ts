@@ -37,10 +37,11 @@ export class ColonyManager {
   }
 
   private spawnInitialColony(startX: number, startY: number) {
-    // 3 initial foragers, 4 diggers, 1 nurse
+    // 3 initial foragers, 10 diggers, 1 nurse
     const initialRoles: AntRole[] = [
       'Forager', 'Forager', 'Forager', 
-      'Digger', 'Digger', 'Digger', 'Digger', 
+      'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
+      'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
       'Nurse'
     ];
     initialRoles.forEach((role, i) => {
