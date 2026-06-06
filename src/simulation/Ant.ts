@@ -433,6 +433,44 @@ export class Ant {
         }
       }
 
+      // If we are looking for a job but couldn't find any adjacent dirt inside the active plan,
+      // and we have an active coordinated target:
+      // Tunnel directly towards the target to establish connectivity!
+      if (activeExcavationTarget) {
+        const targetCol = Math.floor(activeExcavationTarget.x / CONFIG.CELL_SIZE);
+        const targetRow = Math.floor(activeExcavationTarget.y / CONFIG.CELL_SIZE);
+        
+        const distToTarget = Math.sqrt((col - targetCol) ** 2 + (row - targetRow) ** 2);
+        
+        let bestColOffset = 0;
+        let bestRowOffset = 0;
+        let minNewDist = distToTarget;
+
+        for (const [dc, dr] of directions) {
+          const tc = col + dc;
+          const tr = row + dr;
+          if (tr >= CONFIG.SKY_HEIGHT + 5 && grid.isDiggable(tc, tr)) {
+            const newDist = Math.sqrt((tc - targetCol) ** 2 + (tr - targetRow) ** 2);
+            if (newDist < minNewDist) {
+              minNewDist = newDist;
+              bestColOffset = dc;
+              bestRowOffset = dr;
+            }
+          }
+        }
+
+        if (bestColOffset !== 0 || bestRowOffset !== 0) {
+          const tc = col + bestColOffset;
+          const tr = row + bestRowOffset;
+          grid.digCell(tc, tr);
+          this.cargo = 'Dirt';
+          this.state = 'CarryingDirt';
+          this.angle += Math.PI;
+          this.collisionCooldown = 0;
+          return;
+        }
+      }
+
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head back to the nest entrance
         const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;

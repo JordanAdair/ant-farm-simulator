@@ -108,7 +108,7 @@ export const CONFIG = {
   MAX_OFFLINE_TIME: 86400 * 7, // 1 week max
 };
 
-export const STARTING_CHAMBER_CENTER_ROW = Math.floor(CONFIG.ROWS / 2); // 165
+export const STARTING_CHAMBER_CENTER_ROW = 220;
 
 export interface ExcavationStep {
   name: string;

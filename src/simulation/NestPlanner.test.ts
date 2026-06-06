@@ -76,12 +76,12 @@ describe('NestPlanner', () => {
         name: 'Extend Shaft (Tier 1)',
         minCol: entranceCol - 8,
         maxCol: entranceCol + 8,
-        minRow: STARTING_CHAMBER_CENTER_ROW + 7,
-        maxRow: STARTING_CHAMBER_CENTER_ROW + 27,
+        minRow: STARTING_CHAMBER_CENTER_ROW + 4,
+        maxRow: STARTING_CHAMBER_CENTER_ROW + 24,
         entranceCol
       };
 
-      const testRow = STARTING_CHAMBER_CENTER_ROW + 17;
+      const testRow = STARTING_CHAMBER_CENTER_ROW + 14;
       const center = getShaftCenterCol(testRow, entranceCol);
 
       // Center cells should be inside

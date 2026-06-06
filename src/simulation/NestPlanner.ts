@@ -83,7 +83,7 @@ export function isCellInsidePlanStep(step: ExcavationStep, c: number, r: number)
  */
 export function generateProceduralNestPlan(entranceCol: number): ExcavationStep[] {
   const plan: ExcavationStep[] = [];
-  let currentRow = STARTING_CHAMBER_CENTER_ROW + 7; // Start below the starting Queen's chamber
+  let currentRow = STARTING_CHAMBER_CENTER_ROW + 4; // Start below the starting Queen's chamber
   
   // We procedurally generate 8 levels (tiers) of construction
   for (let L = 1; L <= 8; L++) {
