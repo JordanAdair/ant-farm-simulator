@@ -189,7 +189,7 @@ export class Ant {
   ) {
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
     const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-    const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
+    const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
 
     // Find the closest food storage chamber
     let closestStorage = foodStorages[0];
@@ -348,7 +348,7 @@ export class Ant {
       }
 
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
+      const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
 
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head to entrance
@@ -498,7 +498,7 @@ export class Ant {
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head back to the nest entrance
         const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
+        const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
         this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'none';
       } else {
@@ -580,7 +580,7 @@ export class Ant {
     if (row < CONFIG.SKY_HEIGHT) {
       this.state = 'Wandering';
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
+      const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
       this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
       
@@ -888,37 +888,46 @@ export class Ant {
       const canSlideHorizontal = grid.isWalkable(nextCol, snapRow);
       const canSlideVertical = grid.isWalkable(snapCol, nextRow);
 
-      if (canSlideHorizontal && !canSlideVertical) {
-        // Slide horizontally
+      const slideHorizontal = () => {
         const slideDir = Math.cos(this.angle) >= 0 ? 1 : -1;
         this.x += slideDir * speed;
-        // Deflect angle towards horizontal
         const targetAngle = slideDir === 1 ? 0 : Math.PI;
         this.steerTowardsAngle(targetAngle, 0.2);
-        this.collisionCooldown = 6; // set cooldown to let the slide complete without steer override
+        this.collisionCooldown = 6;
         this.collisions++;
         this.collisionTimer = 20;
-      } else if (canSlideVertical && !canSlideHorizontal) {
-        // Slide vertically
+      };
+
+      const slideVertical = () => {
         let slideDir = Math.sin(this.angle) > 0 ? 1 : -1;
         if (Math.abs(Math.sin(this.angle)) < 0.1) {
-          // If moving almost horizontally, choose vertical direction towards target or sky
           if (snapRow < CONFIG.SKY_HEIGHT + 5) {
-            slideDir = -1; // Climb up surface mounds
+            slideDir = -1; // climb up
           } else {
-            // Underground: climb up or down
             slideDir = Math.random() < 0.5 ? 1 : -1;
           }
         }
         this.y += slideDir * speed;
-        // Deflect angle towards vertical
         const targetAngle = slideDir === 1 ? Math.PI / 2 : -Math.PI / 2;
         this.steerTowardsAngle(targetAngle, 0.2);
-        this.collisionCooldown = 6; // set cooldown to let the slide complete without steer override
+        this.collisionCooldown = 6;
         this.collisions++;
         this.collisionTimer = 20;
+      };
+
+      if (canSlideHorizontal && !canSlideVertical) {
+        slideHorizontal();
+      } else if (canSlideVertical && !canSlideHorizontal) {
+        slideVertical();
+      } else if (canSlideHorizontal && canSlideVertical) {
+        // Diagonal corner! Pick the major axis of movement to slide along
+        if (Math.abs(Math.cos(this.angle)) > Math.abs(Math.sin(this.angle))) {
+          slideHorizontal();
+        } else {
+          slideVertical();
+        }
       } else {
-        // Both directions blocked (corner or head-on collision)
+        // Complete block!Both directions blocked (corner or head-on collision)
         // Find a walkable direction by scanning alternative angles
         let foundWalkable = false;
         const angleScans = [0.4, -0.4, 0.8, -0.8, 1.2, -1.2, Math.PI];
