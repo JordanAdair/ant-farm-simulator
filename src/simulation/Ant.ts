@@ -189,7 +189,7 @@ export class Ant {
   ) {
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
     const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-    const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+    const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
 
     // Find the closest food storage chamber
     let closestStorage = foodStorages[0];
@@ -348,7 +348,7 @@ export class Ant {
       }
 
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
 
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head to entrance
@@ -498,7 +498,7 @@ export class Ant {
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head back to the nest entrance
         const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+        const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
         this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'none';
       } else {
@@ -531,7 +531,7 @@ export class Ant {
       this.state = 'CarryingDirt';
 
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
 
       // State check: on surface, walk away from entrance and drop dirt (ALWAYS run this check)
       if (row < CONFIG.SKY_HEIGHT) {
@@ -580,7 +580,7 @@ export class Ant {
     if (row < CONFIG.SKY_HEIGHT) {
       this.state = 'Wandering';
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
       this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
       
@@ -867,7 +867,7 @@ export class Ant {
       if (!found) {
         // Fallback: teleport to nest entrance
         this.x = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        this.y = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+        this.y = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
       }
     }
 
