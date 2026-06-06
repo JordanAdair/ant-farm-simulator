@@ -1,4 +1,4 @@
-import { CONFIG } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
 import type { CellType, AntRole } from './types';
 import { WorldGrid } from './Grid';
 import { SimulationEngine } from './Engine';
@@ -212,7 +212,7 @@ export class OfflineProgression {
 
       // 3. Restore Ants
       const startX = engine.grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE;
+      const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE;
 
       if (state.nextAntNum !== undefined) {
         engine.colony.nextAntNum = state.nextAntNum;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateProceduralNestPlan, isCellInsidePlanStep, getShaftCenterCol, getPassageRow } from './NestPlanner';
-import { CONFIG } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
 
 describe('NestPlanner', () => {
   const entranceCol = Math.floor(CONFIG.COLS / 2);
@@ -76,12 +76,12 @@ describe('NestPlanner', () => {
         name: 'Extend Shaft (Tier 1)',
         minCol: entranceCol - 8,
         maxCol: entranceCol + 8,
-        minRow: CONFIG.SKY_HEIGHT + 30,
-        maxRow: CONFIG.SKY_HEIGHT + 50,
+        minRow: STARTING_CHAMBER_CENTER_ROW + 7,
+        maxRow: STARTING_CHAMBER_CENTER_ROW + 27,
         entranceCol
       };
 
-      const testRow = CONFIG.SKY_HEIGHT + 40;
+      const testRow = STARTING_CHAMBER_CENTER_ROW + 17;
       const center = getShaftCenterCol(testRow, entranceCol);
 
       // Center cells should be inside

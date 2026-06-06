@@ -1,4 +1,4 @@
-import { CONFIG } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
 import type { Brood, AntRole, ExcavationStep, Position, AntBrain, LogEntry } from './types';
 import { Ant, createDefaultBrain } from './Ant';
 import { WorldGrid } from './Grid';
@@ -16,7 +16,7 @@ export class ColonyManager {
 
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE; // queen chamber height
+    const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE; // queen chamber height
 
     this.queen = {
       x: startX,
@@ -418,7 +418,7 @@ export class ColonyManager {
     this.nextAntNum = 1;
     
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE;
+    const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE;
     
     this.queen = {
       x: startX,
@@ -442,7 +442,7 @@ export class ColonyManager {
 
     // The Queen's chamber is the default nursery and food storage
     const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE;
+    const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE;
     
     // Add default spots (offsets from chamber center)
     nurseries.push({ x: entranceX - 40, y: startY + 12 });
