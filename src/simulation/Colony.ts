@@ -5,7 +5,7 @@ import { WorldGrid } from './Grid';
 import { generateProceduralNestPlan, isCellInsidePlanStep } from './NestPlanner';
 
 export class ColonyManager {
-  public foodStockpile: number = 50; // starts with a little food
+  public foodStockpile: number = 200; // starts with a little food
   public ants: Ant[] = [];
   public broodList: Brood[] = [];
   public queen: { x: number; y: number; energy: number; eggTimer: number; direction: number; targetX: number; restTimer?: number };
@@ -37,19 +37,21 @@ export class ColonyManager {
   }
 
   private spawnInitialColony(startX: number, startY: number) {
-    // 3 initial foragers, 10 diggers, 1 nurse
+    // 7 foragers, 10 diggers, 3 nurses
     const initialRoles: AntRole[] = [
-      'Forager', 'Forager', 'Forager', 
+      'Forager', 'Forager', 'Forager', 'Forager', 'Forager', 'Forager', 'Forager',
       'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
       'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
-      'Nurse'
+      'Nurse', 'Nurse', 'Nurse'
     ];
-    initialRoles.forEach((role, i) => {
-      const offset = (i - Math.floor(initialRoles.length / 2)) * 12;
+    initialRoles.forEach((role) => {
+      // Give them a random position within the central chamber
+      const dx = (Math.random() - 0.5) * 40;
+      const dy = (Math.random() - 0.5) * 10;
       const num = this.nextAntNum++;
-      const ant = new Ant(`ant-${num}`, startX + offset, startY, role, num, createDefaultBrain(), 1);
-      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 450 seconds)
-      ant.age = Math.random() * 450;
+      const ant = new Ant(`ant-${num}`, startX + dx, startY + dy, role, num, createDefaultBrain(), 1);
+      // Randomize initial age so they die at staggered times
+      ant.age = Math.random() * 15; // 0 to 15 in-game days
       this.ants.push(ant);
     });
   }
@@ -259,10 +261,10 @@ export class ColonyManager {
   private balanceAntRoles() {
     if (this.ants.length === 0) return;
 
-    // Target ratios: Foragers: 40%, Diggers: 35%, Nurses: 25%
-    const foragerTarget = 0.40;
-    const diggerTarget = 0.35;
-    const nurseTarget = 0.25;
+    // Target ratios: Diggers: 50%, Foragers: 35%, Nurses: 15%
+    const foragerTarget = 0.35;
+    const diggerTarget = 0.50;
+    const nurseTarget = 0.15;
 
     let foragers = 0;
     let diggers = 0;
@@ -413,7 +415,7 @@ export class ColonyManager {
   }
 
   public reset(entranceCol: number) {
-    this.foodStockpile = 50;
+    this.foodStockpile = 200;
     this.ants = [];
     this.broodList = [];
     this.nextAntNum = 1;
@@ -445,9 +447,9 @@ export class ColonyManager {
     const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
     const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE;
     
-    // Add default spots (offsets from chamber center)
-    nurseries.push({ x: entranceX - 40, y: startY + 12 });
-    foodStorages.push({ x: entranceX + 40, y: startY + 12 });
+    // Add default spots (offsets from chamber center). Move up to avoid clipping into floor.
+    nurseries.push({ x: entranceX - 40, y: startY + 4 });
+    foodStorages.push({ x: entranceX + 40, y: startY + 4 });
 
     // Scan the excavation plan steps
     for (const step of this.excavationPlan) {

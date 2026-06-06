@@ -1,8 +1,9 @@
 import { CONFIG } from './types';
 import type { AntRole, AntState, Position, ExcavationStep, AntBrain } from './types';
-import { isCellInsidePlanStep, getShaftCenterCol } from './NestPlanner';
+import { isCellInsidePlanStep } from './NestPlanner';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
+import { findPath } from './Pathfinder';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -59,6 +60,10 @@ export class Ant {
   public desiredAngle: number;
   public desiredPheromone: 'food' | 'home' | 'none' = 'none';
 
+  // Pathfinding
+  public currentPath: Position[] | null = null;
+  public pathTarget: Position | null = null;
+
   constructor(
     id: string,
     startX: number,
@@ -84,7 +89,7 @@ export class Ant {
     this.desiredAngle = this.angle;
 
     this.age = 0;
-    this.maxAge = 600 + Math.random() * 300; // 10 to 15 minutes of life at 1x speed
+    this.maxAge = 30 + Math.random() * 60; // 30 to 90 in-game days
   }
 
   public getFitness(): number {
@@ -109,9 +114,9 @@ export class Ant {
     const speed = CONFIG.ANT_SPEED * speedMultiplier;
     this.legCycle += 0.25 * speedMultiplier;
 
-    // Energy slowly depletes
-    this.energy -= 0.01 * speedMultiplier;
-    if (this.energy < 20 && this.state !== 'Resting') {
+    // Energy slowly depletes. The world is deep, so they need enough energy to make the long walk home!
+    this.energy -= 0.002 * speedMultiplier;
+    if (this.energy < 25 && this.state !== 'Resting') {
       this.state = 'Resting'; // go home and eat
     }
 
@@ -120,6 +125,9 @@ export class Ant {
     }
     if (this.collisionTimer > 0) {
       this.collisionTimer -= speedMultiplier;
+      if (this.collisionTimer > 10) {
+        this.currentPath = null; // force recalculate path if stuck
+      }
     }
 
     // Reset steering targets at start of frame
@@ -209,11 +217,11 @@ export class Ant {
     // Go back to the nest
     if (row < CONFIG.SKY_HEIGHT) {
       // On surface: head to entrance
-      this.desiredAngle = this.steerTowardsTargetNest(grid, entranceX, entranceY);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
     } else {
       // Underground: head to closest food storage
-      this.desiredAngle = this.steerTowardsTargetNest(grid, closestStorage.x, closestStorage.y);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
       this.desiredPheromone = 'home';
     }
   }
@@ -344,7 +352,7 @@ export class Ant {
 
       if (row < CONFIG.SKY_HEIGHT) {
         // On surface: head to entrance
-        this.desiredAngle = this.steerTowardsTargetNest(grid, entranceX, entranceY);
+        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'none';
       } else {
         // Underground: steer towards the closest food storage chamber and follow home pheromone
@@ -357,7 +365,7 @@ export class Ant {
             closestStorage = storage;
           }
         }
-        this.desiredAngle = this.steerTowardsTargetNest(grid, closestStorage.x, closestStorage.y);
+        this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
         this.desiredPheromone = 'home';
       }
     }
@@ -442,32 +450,48 @@ export class Ant {
         
         const distToTarget = Math.sqrt((col - targetCol) ** 2 + (row - targetRow) ** 2);
         
-        let bestColOffset = 0;
-        let bestRowOffset = 0;
-        let minNewDist = distToTarget;
-
+        // Check if there is any walkable cell that gets us closer
+        let canWalkCloser = false;
         for (const [dc, dr] of directions) {
           const tc = col + dc;
           const tr = row + dr;
-          if (tr >= CONFIG.SKY_HEIGHT + 5 && grid.isDiggable(tc, tr)) {
+          if (grid.isWalkable(tc, tr)) {
             const newDist = Math.sqrt((tc - targetCol) ** 2 + (tr - targetRow) ** 2);
-            if (newDist < minNewDist) {
-              minNewDist = newDist;
-              bestColOffset = dc;
-              bestRowOffset = dr;
+            if (newDist < distToTarget) {
+              canWalkCloser = true;
+              break;
             }
           }
         }
 
-        if (bestColOffset !== 0 || bestRowOffset !== 0) {
-          const tc = col + bestColOffset;
-          const tr = row + bestRowOffset;
-          grid.digCell(tc, tr);
-          this.cargo = 'Dirt';
-          this.state = 'CarryingDirt';
-          this.angle += Math.PI;
-          this.collisionCooldown = 0;
-          return;
+        if (!canWalkCloser) {
+          let bestColOffset = 0;
+          let bestRowOffset = 0;
+          let minNewDist = distToTarget;
+
+          for (const [dc, dr] of directions) {
+            const tc = col + dc;
+            const tr = row + dr;
+            if (tr >= CONFIG.SKY_HEIGHT + 5 && grid.isDiggable(tc, tr)) {
+              const newDist = Math.sqrt((tc - targetCol) ** 2 + (tr - targetRow) ** 2);
+              if (newDist < minNewDist) {
+                minNewDist = newDist;
+                bestColOffset = dc;
+                bestRowOffset = dr;
+              }
+            }
+          }
+
+          if (bestColOffset !== 0 || bestRowOffset !== 0) {
+            const tc = col + bestColOffset;
+            const tr = row + bestRowOffset;
+            grid.digCell(tc, tr);
+            this.cargo = 'Dirt';
+            this.state = 'CarryingDirt';
+            this.angle += Math.PI;
+            this.collisionCooldown = 0;
+            return;
+          }
         }
       }
 
@@ -475,7 +499,7 @@ export class Ant {
         // On surface: head back to the nest entrance
         const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
         const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-        this.desiredAngle = this.steerTowardsTargetNest(grid, entranceX, entranceY);
+        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'none';
       } else {
         // Underground: steer towards active construction zone, or follow preferred digging direction
@@ -487,7 +511,7 @@ export class Ant {
             targetX = activeExcavationTarget.x;
             targetY = activeExcavationTarget.y;
           }
-          this.desiredAngle = this.steerTowardsTargetNest(grid, targetX, targetY);
+          this.desiredAngle = this.getAngleTowardsTarget(grid, targetX, targetY);
           this.desiredPheromone = 'none';
         } else {
           if (this.diggingAngle === undefined) {
@@ -530,7 +554,7 @@ export class Ant {
 
       if (row >= CONFIG.SKY_HEIGHT) {
         // Underground: find path up.
-        this.desiredAngle = this.steerTowardsTargetNest(grid, entranceX, entranceY);
+        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'home';
       } else {
         // On surface: move away from entrance (either left or right)
@@ -557,7 +581,7 @@ export class Ant {
       this.state = 'Wandering';
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
       const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-      this.desiredAngle = this.steerTowardsTargetNest(grid, entranceX, entranceY);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
       
       // If carrying a brood on the surface, update its position along with the nurse
@@ -603,7 +627,7 @@ export class Ant {
           return;
         }
 
-        this.desiredAngle = this.steerTowardsTargetNest(grid, targetX, targetY);
+        this.desiredAngle = this.getAngleTowardsTarget(grid, targetX, targetY);
         this.desiredPheromone = 'none';
       } else {
         this.isHoldingBrood = false;
@@ -639,7 +663,7 @@ export class Ant {
         }
       }
 
-      this.desiredAngle = this.steerTowardsTargetNest(grid, closestStorage.x, closestStorage.y);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
       this.desiredPheromone = 'none';
       return;
     }
@@ -660,7 +684,7 @@ export class Ant {
         return;
       }
 
-      this.desiredAngle = this.steerTowardsTargetNest(grid, hungryLarva.x, hungryLarva.y);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, hungryLarva.x, hungryLarva.y);
       this.desiredPheromone = 'none';
       return;
     }
@@ -696,7 +720,7 @@ export class Ant {
         return;
       }
 
-      this.desiredAngle = this.steerTowardsTargetNest(grid, strayBrood.x, strayBrood.y);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, strayBrood.x, strayBrood.y);
       this.desiredPheromone = 'none';
       return;
     }
@@ -706,7 +730,7 @@ export class Ant {
     
     const distToQueen = Math.sqrt((this.x - queenPos.x) ** 2 + (this.y - queenPos.y) ** 2);
     if (distToQueen > 80) {
-      this.desiredAngle = this.steerTowardsTargetNest(grid, queenPos.x, queenPos.y);
+      this.desiredAngle = this.getAngleTowardsTarget(grid, queenPos.x, queenPos.y);
     } else {
       this.desiredAngle = this.angle + (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
     }
@@ -971,97 +995,38 @@ export class Ant {
     this.angle = Math.atan2(Math.sin(this.angle), Math.cos(this.angle));
   }
 
-  private steerTowardsTargetNest(grid: WorldGrid, targetX: number, targetY: number): number {
+  private getAngleTowardsTarget(grid: WorldGrid, targetX: number, targetY: number): number {
     const CELL_SIZE = CONFIG.CELL_SIZE;
     const curCol = Math.floor(this.x / CELL_SIZE);
     const curRow = Math.floor(this.y / CELL_SIZE);
     const targetCol = Math.floor(targetX / CELL_SIZE);
     const targetRow = Math.floor(targetY / CELL_SIZE);
-    const skyRow = CONFIG.SKY_HEIGHT;
 
-    const currentShaftCenter = getShaftCenterCol(curRow, grid.nestEntranceCol);
-    const shaftColStart = currentShaftCenter - 2;
-    const shaftColEnd = currentShaftCenter + 1;
-    const shaftMidX = (currentShaftCenter * CELL_SIZE) + (CELL_SIZE / 2);
+    // If target changed, or no path, recalculate
+    if (!this.currentPath || !this.pathTarget || this.pathTarget.x !== targetCol || this.pathTarget.y !== targetRow) {
+      this.currentPath = findPath(grid, curCol, curRow, targetCol, targetRow) || [];
+      this.pathTarget = { x: targetCol, y: targetRow };
+    }
 
-    // If both the ant and the target are above the surface, steer directly
-    if (curRow < skyRow && targetRow < skyRow) {
-      const dx = targetX - this.x;
-      const dy = targetY - this.y;
+    if (this.currentPath && this.currentPath.length > 0) {
+      // Steer towards next waypoint
+      const nextWP = this.currentPath[0];
+      const dx = nextWP.x - this.x;
+      const dy = nextWP.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      // If we reached the waypoint, pop it
+      if (dist < CELL_SIZE * 1.5) {
+        this.currentPath.shift();
+        if (this.currentPath.length > 0) {
+          const nextNext = this.currentPath[0];
+          return Math.atan2(nextNext.y - this.y, nextNext.x - this.x);
+        }
+      }
       return Math.atan2(dy, dx);
     }
 
-    // If the ant is on the surface (above the nest) and the target is underground:
-    // It must first go to the nest entrance (shaft top)
-    if (curRow < skyRow && targetRow >= skyRow) {
-      const entranceX = grid.nestEntranceCol * CELL_SIZE;
-      const entranceY = skyRow * CELL_SIZE;
-      const dx = entranceX - this.x;
-      if (Math.abs(dx) < CELL_SIZE * 3.0) {
-        return Math.PI / 2; // Go straight down into the shaft
-      } else {
-        const dy = entranceY - this.y;
-        return Math.atan2(dy, dx);
-      }
-    }
-
-    // If the ant is underground and the target is on the surface:
-    // It must first climb up the shaft to the surface
-    if (curRow >= skyRow && targetRow < skyRow) {
-      // If we are in the shaft, follow it up
-      if (curCol >= shaftColStart && curCol <= shaftColEnd) {
-        const nextRow = Math.max(skyRow, curRow - 4);
-        const targetShaftCenterCol = getShaftCenterCol(nextRow, grid.nestEntranceCol);
-        const targetShaftX = targetShaftCenterCol * CELL_SIZE + CELL_SIZE / 2;
-        const targetShaftY = nextRow * CELL_SIZE + CELL_SIZE / 2;
-        const dx = targetShaftX - this.x;
-        const dy = targetShaftY - this.y;
-        return Math.atan2(dy, dx);
-      } else {
-        // We are in a side chamber, walk horizontally towards the shaft
-        const dx = shaftMidX - this.x;
-        return Math.atan2(0, dx); // steer purely horizontally (dy = 0) to avoid getting stuck on chamber ceilings/floors
-      }
-    }
-
-    // Both ant and target are underground (row >= skyRow)
-    const inShaft = curCol >= shaftColStart && curCol <= shaftColEnd;
-
-    if (inShaft) {
-      // If we are in the shaft:
-      // If we need to go to a different height, follow the shaft center
-      if (Math.abs(curRow - targetRow) > 2) {
-        const nextRow = curRow + Math.sign(targetRow - curRow) * 4;
-        const targetShaftCenterCol = getShaftCenterCol(nextRow, grid.nestEntranceCol);
-        const targetShaftX = targetShaftCenterCol * CELL_SIZE + CELL_SIZE / 2;
-        const targetShaftY = nextRow * CELL_SIZE + CELL_SIZE / 2;
-        const dx = targetShaftX - this.x;
-        const dy = targetShaftY - this.y;
-        return Math.atan2(dy, dx);
-      } else {
-        // We are at the correct height, steer towards target
-        const dx = targetX - this.x;
-        const dy = targetY - this.y;
-        return Math.atan2(dy, dx);
-      }
-    } else {
-      // We are in a side chamber (left or right)
-      // Check if target is on the same side AND at roughly the same height
-      const sameSide = (curCol < shaftColStart && targetCol < shaftColStart) ||
-                       (curCol > shaftColEnd && targetCol > shaftColEnd);
-      
-      if (sameSide && Math.abs(curRow - targetRow) <= 4) {
-        // Direct steering
-        const dx = targetX - this.x;
-        const dy = targetY - this.y;
-        return Math.atan2(dy, dx);
-      } else {
-        // Target is on the other side, or at a different height.
-        // We must walk horizontally to the shaft first.
-        const dx = shaftMidX - this.x;
-        // Keep dy small or zero to walk straight horizontally into the shaft
-        return Math.atan2(0, dx);
-      }
-    }
+    // Fallback if no path found (should be rare)
+    return Math.atan2(targetY - this.y, targetX - this.x);
   }
 }

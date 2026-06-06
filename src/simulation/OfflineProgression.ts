@@ -454,12 +454,17 @@ export class OfflineProgression {
             antsBorn++;
             const id = `ant-${Math.random().toString(36).substr(2, 9)}`;
             
-            // Assign role
+            // Assign role to maintain 50% Diggers, 35% Foragers, 15% Nurses
             let role: AntRole = 'Forager';
-            if (foragers > diggers && foragers > nurses) {
+            const totalAnts = foragers + diggers + nurses + 1;
+            const foragerDiff = foragers / totalAnts - 0.35;
+            const diggerDiff = diggers / totalAnts - 0.50;
+            const nurseDiff = nurses / totalAnts - 0.15;
+            
+            if (diggerDiff < foragerDiff && diggerDiff < nurseDiff) {
               role = 'Digger';
               diggers++;
-            } else if (diggers > nurses) {
+            } else if (nurseDiff < foragerDiff && nurseDiff < diggerDiff) {
               role = 'Nurse';
               nurses++;
             } else {

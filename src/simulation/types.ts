@@ -75,7 +75,7 @@ export interface TelemetryPoint {
 export const CONFIG = {
   // Grid settings
   COLS: 400,
-  ROWS: 330,
+  ROWS: 600,
   CELL_SIZE: 4,
   SKY_HEIGHT: 130, // rows 0 to 129 are air/surface
   
@@ -108,7 +108,7 @@ export const CONFIG = {
   MAX_OFFLINE_TIME: 86400 * 7, // 1 week max
 };
 
-export const STARTING_CHAMBER_CENTER_ROW = 220;
+export const STARTING_CHAMBER_CENTER_ROW = 300;
 
 export interface ExcavationStep {
   name: string;
