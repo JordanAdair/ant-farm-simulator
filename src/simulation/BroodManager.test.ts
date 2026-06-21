@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { BroodManager } from './BroodManager';
-import { CONFIG } from './types';
 
 describe('BroodManager Lifecycle', () => {
   it('should progress egg to larva', () => {
