@@ -74,10 +74,10 @@ export interface TelemetryPoint {
 // Global Configuration
 export const CONFIG = {
   // Grid settings
-  COLS: 400,
-  ROWS: 330,
+  COLS: 200,
+  ROWS: 165,
   CELL_SIZE: 4,
-  SKY_HEIGHT: 130, // rows 0 to 129 are air/surface
+  SKY_HEIGHT: 65, // rows 0 to 129 are air/surface
   
   // Simulation physics
   ANT_SPEED: 1.2,
@@ -139,43 +139,28 @@ export function isCellInsidePlanStep(step: ExcavationStep, c: number, r: number)
 
 
 export const EXCAVATION_PLAN: ExcavationStep[] = [
-  // Tier 1 (row 76 to 92)
-  { name: 'Extend Shaft (Tier 1)', minCol: 199, maxCol: 200, minRow: 76, maxRow: 92 },
-  { name: 'Left Chamber (Tier 1)', minCol: 180, maxCol: 198, minRow: 82, maxRow: 86 },
-  { name: 'Right Chamber (Tier 1)', minCol: 201, maxCol: 220, minRow: 82, maxRow: 86 },
+  // Tier 1 (row 77 to 93)
+  { name: 'Extend Shaft (Tier 1)', minCol: 99, maxCol: 100, minRow: 77, maxRow: 93 },
+  { name: 'Left Chamber (Tier 1)', minCol: 90, maxCol: 98, minRow: 82, maxRow: 86 },
+  { name: 'Right Chamber (Tier 1)', minCol: 101, maxCol: 110, minRow: 82, maxRow: 86 },
 
-  // Tier 2 (row 92 to 112)
-  { name: 'Extend Shaft (Tier 2)', minCol: 199, maxCol: 200, minRow: 92, maxRow: 112 },
-  { name: 'Left Chamber (Tier 2)', minCol: 180, maxCol: 198, minRow: 102, maxRow: 106 },
-  { name: 'Right Chamber (Tier 2)', minCol: 201, maxCol: 220, minRow: 102, maxRow: 106 },
+  // Tier 2 (row 93 to 109)
+  { name: 'Extend Shaft (Tier 2)', minCol: 99, maxCol: 100, minRow: 93, maxRow: 109 },
+  { name: 'Left Chamber (Tier 2)', minCol: 90, maxCol: 98, minRow: 98, maxRow: 102 },
+  { name: 'Right Chamber (Tier 2)', minCol: 101, maxCol: 110, minRow: 98, maxRow: 102 },
 
-  // Tier 3 (row 112 to 132)
-  { name: 'Extend Shaft (Tier 3)', minCol: 199, maxCol: 200, minRow: 112, maxRow: 132 },
-  { name: 'Left Chamber (Tier 3)', minCol: 180, maxCol: 198, minRow: 122, maxRow: 126 },
-  { name: 'Right Chamber (Tier 3)', minCol: 201, maxCol: 220, minRow: 122, maxRow: 126 },
+  // Tier 3 (row 109 to 125)
+  { name: 'Extend Shaft (Tier 3)', minCol: 99, maxCol: 100, minRow: 109, maxRow: 125 },
+  { name: 'Left Chamber (Tier 3)', minCol: 90, maxCol: 98, minRow: 114, maxRow: 118 },
+  { name: 'Right Chamber (Tier 3)', minCol: 101, maxCol: 110, minRow: 114, maxRow: 118 },
 
-  // Tier 4 (row 132 to 152)
-  { name: 'Extend Shaft (Tier 4)', minCol: 199, maxCol: 200, minRow: 132, maxRow: 152 },
-  { name: 'Left Chamber (Tier 4)', minCol: 180, maxCol: 198, minRow: 142, maxRow: 146 },
-  { name: 'Right Chamber (Tier 4)', minCol: 201, maxCol: 220, minRow: 142, maxRow: 146 },
+  // Tier 4 (row 125 to 141)
+  { name: 'Extend Shaft (Tier 4)', minCol: 99, maxCol: 100, minRow: 125, maxRow: 141 },
+  { name: 'Left Chamber (Tier 4)', minCol: 90, maxCol: 98, minRow: 130, maxRow: 134 },
+  { name: 'Right Chamber (Tier 4)', minCol: 101, maxCol: 110, minRow: 130, maxRow: 134 },
 
-  // Tier 5 (row 152 to 172)
-  { name: 'Extend Shaft (Tier 5)', minCol: 199, maxCol: 200, minRow: 152, maxRow: 172 },
-  { name: 'Left Chamber (Tier 5)', minCol: 180, maxCol: 198, minRow: 162, maxRow: 166 },
-  { name: 'Right Chamber (Tier 5)', minCol: 201, maxCol: 220, minRow: 162, maxRow: 166 },
-
-  // Tier 6 (row 172 to 192)
-  { name: 'Extend Shaft (Tier 6)', minCol: 199, maxCol: 200, minRow: 172, maxRow: 192 },
-  { name: 'Left Chamber (Tier 6)', minCol: 180, maxCol: 198, minRow: 182, maxRow: 186 },
-  { name: 'Right Chamber (Tier 6)', minCol: 201, maxCol: 220, minRow: 182, maxRow: 186 },
-
-  // Tier 7 (row 192 to 212)
-  { name: 'Extend Shaft (Tier 7)', minCol: 199, maxCol: 200, minRow: 192, maxRow: 212 },
-  { name: 'Left Chamber (Tier 7)', minCol: 180, maxCol: 198, minRow: 202, maxRow: 206 },
-  { name: 'Right Chamber (Tier 7)', minCol: 201, maxCol: 220, minRow: 202, maxRow: 206 },
-
-  // Tier 8 (row 212 to 235)
-  { name: 'Extend Shaft (Tier 8)', minCol: 199, maxCol: 200, minRow: 212, maxRow: 235 },
-  { name: 'Left Chamber (Tier 8)', minCol: 180, maxCol: 198, minRow: 222, maxRow: 226 },
-  { name: 'Right Chamber (Tier 8)', minCol: 201, maxCol: 220, minRow: 222, maxRow: 226 },
+  // Tier 5 (row 141 to 160)
+  { name: 'Extend Shaft (Tier 5)', minCol: 99, maxCol: 100, minRow: 141, maxRow: 160 },
+  { name: 'Left Chamber (Tier 5)', minCol: 90, maxCol: 98, minRow: 146, maxRow: 150 },
+  { name: 'Right Chamber (Tier 5)', minCol: 101, maxCol: 110, minRow: 146, maxRow: 150 },
 ];
