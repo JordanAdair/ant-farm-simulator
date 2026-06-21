@@ -15,7 +15,7 @@ export class ColonyManager {
 
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 14) * CONFIG.CELL_SIZE; // queen chamber height
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE; // queen chamber height
 
     this.queen = {
       x: startX,
@@ -90,8 +90,8 @@ export class ColonyManager {
     }
 
     const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
-    const minX = entranceX - 8;
-    const maxX = entranceX + 8;
+    const minX = entranceX - 16;
+    const maxX = entranceX + 16;
 
     if (this.queen.restTimer > 0) {
       this.queen.restTimer -= dt;
@@ -323,12 +323,12 @@ export class ColonyManager {
   // Procedurally generate a perfectly straight, tiered excavation structure
   public generateProceduralNestPlan(entranceCol: number): ExcavationStep[] {
     const plan: ExcavationStep[] = [];
-    let currentRow = CONFIG.SKY_HEIGHT + 18; // Start below the starting Queen's chamber
+    let currentRow = CONFIG.SKY_HEIGHT + 38; // Start below the starting Queen's chamber
     
-    // We procedurally generate 5 levels (tiers) of construction (each tier is 16 cells high)
-    for (let L = 1; L <= 5; L++) {
+    // We procedurally generate 8 levels (tiers) of construction
+    for (let L = 1; L <= 8; L++) {
       const startRow = currentRow;
-      const endRow = Math.min(CONFIG.ROWS - 5, currentRow + 16);
+      const endRow = Math.min(CONFIG.ROWS - 5, currentRow + 18);
       currentRow = endRow;
       
       // 1. Extend Shaft (perfectly straight shaft cols)
@@ -346,11 +346,11 @@ export class ColonyManager {
       const hasRight = layout === 1 || layout === 2;
       
       // Center the horizontal elements vertically inside the tier height
-      const pRow = startRow + 8;
+      const pRow = startRow + 9;
       
       if (hasLeft) {
         // Create left passage (3 cells high)
-        const pLen = 8 + Math.floor(Math.random() * 3); // passage length 8 to 10 cells
+        const pLen = 15 + Math.floor(Math.random() * 5); // passage length 15 to 19 cells
         const passMinC = Math.max(5, entranceCol - pLen);
         const passMaxC = entranceCol - 3;
         
@@ -362,9 +362,9 @@ export class ColonyManager {
           maxRow: pRow + 1
         });
         
-        // Create left chamber (Nursery, 5 to 6 cells high)
-        const cWidth = 8 + Math.floor(Math.random() * 3);
-        const cHeight = 5 + Math.floor(Math.random() * 2);
+        // Create left chamber (Nursery, 6 to 9 cells high, aligned)
+        const cWidth = 14 + Math.floor(Math.random() * 6);
+        const cHeight = 7 + Math.floor(Math.random() * 2); // 7 or 8 cells high
         const chamMinC = Math.max(5, passMinC - cWidth);
         const chamMaxC = passMinC;
         const chamMinR = pRow - Math.floor(cHeight / 2);
@@ -379,8 +379,8 @@ export class ColonyManager {
         });
         
         // Chain a second chamber (Annex)? (40% chance)
-        if (Math.random() < 0.40 && chamMinC > 15) {
-          const chainPLen = 6 + Math.floor(Math.random() * 3);
+        if (Math.random() < 0.40 && chamMinC > 30) {
+          const chainPLen = 10 + Math.floor(Math.random() * 5);
           const chainMinC = Math.max(5, chamMinC - chainPLen);
           const chainMaxC = chamMinC - 1;
           
@@ -392,8 +392,8 @@ export class ColonyManager {
             maxRow: pRow + 1
           });
           
-          const chainCW = 6 + Math.floor(Math.random() * 3);
-          const chainCH = 4 + Math.floor(Math.random() * 2);
+          const chainCW = 12 + Math.floor(Math.random() * 5);
+          const chainCH = 6 + Math.floor(Math.random() * 3);
           const chainChamMinC = Math.max(5, chainMinC - chainCW);
           const chainChamMaxC = chainMinC;
           const chainMinR = pRow - Math.floor(chainCH / 2);
@@ -411,7 +411,7 @@ export class ColonyManager {
       
       if (hasRight) {
         // Create right passage (3 cells high)
-        const pLen = 8 + Math.floor(Math.random() * 3);
+        const pLen = 15 + Math.floor(Math.random() * 5);
         const passMinC = entranceCol + 2;
         const passMaxC = Math.min(CONFIG.COLS - 6, entranceCol + pLen);
         
@@ -423,9 +423,9 @@ export class ColonyManager {
           maxRow: pRow + 1
         });
         
-        // Create right chamber (Larder, 5 to 6 cells high)
-        const cWidth = 8 + Math.floor(Math.random() * 3);
-        const cHeight = 5 + Math.floor(Math.random() * 2);
+        // Create right chamber (Larder, 6 to 9 cells high, aligned)
+        const cWidth = 14 + Math.floor(Math.random() * 6);
+        const cHeight = 7 + Math.floor(Math.random() * 2);
         const chamMinC = passMaxC;
         const chamMaxC = Math.min(CONFIG.COLS - 6, passMaxC + cWidth);
         const chamMinR = pRow - Math.floor(cHeight / 2);
@@ -440,8 +440,8 @@ export class ColonyManager {
         });
         
         // Chain a second chamber (Annex)? (40% chance)
-        if (Math.random() < 0.40 && chamMaxC < CONFIG.COLS - 15) {
-          const chainPLen = 6 + Math.floor(Math.random() * 3);
+        if (Math.random() < 0.40 && chamMaxC < CONFIG.COLS - 30) {
+          const chainPLen = 10 + Math.floor(Math.random() * 5);
           const chainMinC = chamMaxC + 1;
           const chainMaxC = Math.min(CONFIG.COLS - 6, chamMaxC + chainPLen);
           
@@ -453,8 +453,8 @@ export class ColonyManager {
             maxRow: pRow + 1
           });
           
-          const chainCW = 6 + Math.floor(Math.random() * 3);
-          const chainCH = 4 + Math.floor(Math.random() * 2);
+          const chainCW = 12 + Math.floor(Math.random() * 5);
+          const chainCH = 6 + Math.floor(Math.random() * 3);
           const chainChamMinC = chainMaxC;
           const chainChamMaxC = Math.min(CONFIG.COLS - 6, chainMaxC + chainCW);
           const chainMinR = pRow - Math.floor(chainCH / 2);
@@ -570,7 +570,7 @@ export class ColonyManager {
     this.nextAntNum = 1;
     
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 14) * CONFIG.CELL_SIZE;
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE;
     
     this.queen = {
       x: startX,
@@ -594,7 +594,7 @@ export class ColonyManager {
 
     // The Queen's chamber is the default nursery and food storage
     const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 14) * CONFIG.CELL_SIZE;
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE;
     
     // Add default spots (offsets from chamber center)
     nurseries.push({ x: entranceX - 40, y: startY + 12 });

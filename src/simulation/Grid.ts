@@ -79,7 +79,7 @@ export class WorldGrid {
     const skyHeight = CONFIG.SKY_HEIGHT;
 
     // 1. Vertical main shaft (straight and clean)
-    const shaftDepth = 12;
+    const shaftDepth = 30;
     for (let r = skyHeight; r < skyHeight + shaftDepth; r++) {
       for (let c = entranceCol - 2; c <= entranceCol + 1; c++) {
         if (this.isValid(c, r)) {
@@ -90,16 +90,16 @@ export class WorldGrid {
 
     // 2. Central Queen chamber (bottom of the shaft, rounded corners)
     const chamberRow = skyHeight + shaftDepth;
-    const chamberHalfWidth = 8;
-    const chamberHeight = 5;
+    const chamberHalfWidth = 16;
+    const chamberHeight = 8;
     for (let c = entranceCol - chamberHalfWidth; c <= entranceCol + chamberHalfWidth; c++) {
       for (let r = chamberRow; r < chamberRow + chamberHeight; r++) {
         if (this.isValid(c, r)) {
           const dx = Math.min(c - (entranceCol - chamberHalfWidth), (entranceCol + chamberHalfWidth) - c);
           const dy = Math.min(r - chamberRow, (chamberRow + chamberHeight - 1) - r);
-          if (dx < 3 && dy < 2) {
-            const dist = (3 - dx) ** 2 + (2 - dy) ** 2;
-            if (dist > 5) {
+          if (dx < 6 && dy < 3) {
+            const dist = (6 - dx) ** 2 + (3 - dy) ** 2;
+            if (dist > 25) {
               continue; // Skip clearing this cell to round the chamber corner
             }
           }
@@ -109,10 +109,10 @@ export class WorldGrid {
     }
 
     // Spawn some initial food at the surface (fallen apples)
-    this.spawnFoodAt(entranceCol - 12, skyHeight - 1, 300); // near nest
-    this.spawnFoodAt(Math.floor(CONFIG.COLS * 0.15), skyHeight - 1, 250); // under outer canopy of tree 1
-    this.spawnFoodAt(Math.floor(CONFIG.COLS * 0.6), skyHeight - 1, 250); // under outer canopy of tree 2
-    this.spawnFoodAt(Math.floor(CONFIG.COLS * 0.85), skyHeight - 1, 250); // under outer canopy of tree 3 // under outer canopy of tree 3 (Col 355)
+    this.spawnFoodAt(entranceCol - 25, skyHeight - 1, 300); // near nest (Col 175)
+    this.spawnFoodAt(entranceCol - 120, skyHeight - 1, 250); // under outer canopy of tree 1 (Col 80)
+    this.spawnFoodAt(entranceCol + 60, skyHeight - 1, 250); // under outer canopy of tree 2 (Col 260)
+    this.spawnFoodAt(entranceCol + 155, skyHeight - 1, 250); // under outer canopy of tree 3 (Col 355) // under outer canopy of tree 3 // under outer canopy of tree 3 (Col 355)
   }
 
   public isValid(col: number, row: number): boolean {
@@ -242,10 +242,10 @@ export class WorldGrid {
 
     // Ensure it is outside the entrance buffer zone (minimum distance of 8 cells)
     // to prevent dirt from settling directly inside the shaft opening or sliding into it.
-    if (col < this.nestEntranceCol && col > this.nestEntranceCol - 4) {
-      col = this.nestEntranceCol - 4;
-    } else if (col >= this.nestEntranceCol && col < this.nestEntranceCol + 4) {
-      col = this.nestEntranceCol + 4;
+    if (col < this.nestEntranceCol && col > this.nestEntranceCol - 8) {
+      col = this.nestEntranceCol - 8;
+    } else if (col >= this.nestEntranceCol && col < this.nestEntranceCol + 8) {
+      col = this.nestEntranceCol + 8;
     }
 
     // Find the surface height for a column (row index of the highest solid block)
@@ -263,7 +263,7 @@ export class WorldGrid {
       if (currentR < leftR - 1 && col > 2) {
         // Prevent sliding into the nest entrance shaft buffer
         const nextCol = col - 1;
-        if (Math.abs(nextCol - this.nestEntranceCol) >= 4) {
+        if (Math.abs(nextCol - this.nestEntranceCol) >= 8) {
           col--;
         } else {
           settled = true;

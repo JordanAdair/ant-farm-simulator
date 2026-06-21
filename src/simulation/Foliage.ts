@@ -32,20 +32,20 @@ export class FoliageSystem {
 
   public getRandomCanopyPos(): { relX: number; relY: number } {
     for (let attempt = 0; attempt < 100; attempt++) {
-      const relX = -60 + Math.random() * 120;
-      const relY = -185 + Math.random() * 100;
+      const relX = -120 + Math.random() * 240;
+      const relY = -370 + Math.random() * 200;
       
       // Enforce being off the trunk's vertical axis (which is relX = 0)
-      if (Math.abs(relX) < 8) continue;
+      if (Math.abs(relX) < 15) continue;
 
       // Canopy layers relative to trunk center (0, -270)
       const circles = [
-        { cx: -30, cy: -125, r: 40 },
-        { cx: 30, cy: -125, r: 40 },
-        { cx: -15, cy: -150, r: 48 },
-        { cx: 15, cy: -150, r: 48 },
-        { cx: 0, cy: -165, r: 45 },
-        { cx: 0, cy: -135, r: 50 }
+        { cx: -60, cy: -250, r: 80 },
+        { cx: 60, cy: -250, r: 80 },
+        { cx: -30, cy: -300, r: 95 },
+        { cx: 30, cy: -300, r: 95 },
+        { cx: 0, cy: -330, r: 90 },
+        { cx: 0, cy: -270, r: 100 }
       ];
       for (const c of circles) {
         const dx = relX - c.cx;
@@ -62,9 +62,9 @@ export class FoliageSystem {
 
   public initialize(grid: WorldGrid) {
     const treeCols = [
-      Math.floor(CONFIG.COLS * 0.15), // Far-mid left
-      Math.floor(CONFIG.COLS * 0.6),  // Mid-right
-      Math.floor(CONFIG.COLS * 0.85)  // Far right
+      grid.nestEntranceCol - 135, // Far-mid left
+      grid.nestEntranceCol + 45,  // Mid-right
+      grid.nestEntranceCol + 140  // Far right
     ];
 
     this.trees = treeCols.map(col => {
@@ -95,16 +95,16 @@ export class FoliageSystem {
     for (let c = 0; c < numClusters; c++) {
       // Pick a random center column on the far ends (left for c < 4, right for c >= 4)
       const centerCol = c < 4 
-        ? Math.floor(10 + Math.random() * (CONFIG.COLS * 0.35))
-        : Math.floor(CONFIG.COLS * 0.65 + Math.random() * (CONFIG.COLS * 0.3));
+        ? Math.floor(15 + Math.random() * 65) // columns 15 to 80
+        : Math.floor(320 + Math.random() * 65); // columns 320 to 385
 
       // Spawn 8 to 12 blades per cluster
       const numBlades = 8 + Math.floor(Math.random() * 5);
       for (let b = 0; b < numBlades; b++) {
         const offset = Math.floor((Math.random() - 0.5) * 16); // spread within 8 columns left/right
         const col = Math.max(0, Math.min(CONFIG.COLS - 1, centerCol + offset));
-        const height = 5 + Math.random() * 7; // tall grass
-        const width = 0.5 + Math.random() * 0.6;
+        const height = 10 + Math.random() * 14; // tall grass
+        const width = 1.0 + Math.random() * 1.2;
         const swayOffset = Math.random() * Math.PI * 2;
         this.grassBlades.push({ col, height, width, swayOffset });
       }
@@ -258,46 +258,46 @@ export class FoliageSystem {
       if (startX >= minX - 180 && startX <= maxX + 180 && startY >= minY - 400 && startY <= maxY + 100) {
         // Draw massive trunk (thick and tall)
         ctx.fillStyle = 'hsl(28, 35%, 15%)'; // dark wood brown
-        ctx.fillRect(startX - 8, startY - 130, 16, 130);
+        ctx.fillRect(startX - 16, startY - 260, 32, 260);
 
         // Draw massive branches
         ctx.strokeStyle = 'hsl(28, 35%, 15%)';
         ctx.lineWidth = 8.0;
         ctx.beginPath();
-        ctx.moveTo(startX, startY - 70);
-        ctx.lineTo(startX - 30, startY - 95);
+        ctx.moveTo(startX, startY - 140);
+        ctx.lineTo(startX - 60, startY - 190);
         ctx.stroke();
 
         ctx.lineWidth = 6.0;
         ctx.beginPath();
-        ctx.moveTo(startX, startY - 90);
-        ctx.lineTo(startX + 30, startY - 115);
+        ctx.moveTo(startX, startY - 180);
+        ctx.lineTo(startX + 60, startY - 230);
         ctx.stroke();
 
         // Draw fluffy layered canopy (reacting slightly to wind sway, centered at y = -270)
-        const canopySway = sway * 2.5;
+        const canopySway = sway * 5;
         const cx = startX + canopySway;
-        const cy = startY - 135;
+        const cy = startY - 270;
 
         // Layer 1 (Dark forest green)
         ctx.fillStyle = 'hsl(120, 32%, 14%)';
         ctx.beginPath();
-        ctx.arc(cx - 30, cy + 10, 40, 0, Math.PI * 2);
-        ctx.arc(cx + 30, cy + 10, 40, 0, Math.PI * 2);
+        ctx.arc(cx - 60, cy + 20, 80, 0, Math.PI * 2);
+        ctx.arc(cx + 60, cy + 20, 80, 0, Math.PI * 2);
         ctx.fill();
 
         // Layer 2 (Medium forest green)
         ctx.fillStyle = 'hsl(120, 35%, 18%)';
         ctx.beginPath();
-        ctx.arc(cx - 15, cy - 15, 48, 0, Math.PI * 2);
-        ctx.arc(cx + 15, cy - 15, 48, 0, Math.PI * 2);
+        ctx.arc(cx - 30, cy - 30, 95, 0, Math.PI * 2);
+        ctx.arc(cx + 30, cy - 30, 95, 0, Math.PI * 2);
         ctx.fill();
 
         // Layer 3 (Bright forest green highlight)
         ctx.fillStyle = 'hsl(120, 38%, 22%)';
         ctx.beginPath();
-        ctx.arc(cx, cy - 30, 45, 0, Math.PI * 2);
-        ctx.arc(cx, cy, 50, 0, Math.PI * 2);
+        ctx.arc(cx, cy - 60, 90, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 100, 0, Math.PI * 2);
         ctx.fill();
 
         // Draw hanging fruits (true to size, massive apples)
@@ -305,7 +305,7 @@ export class FoliageSystem {
           if (!fruit.isFalling) {
             const fx = startX + fruit.relX + canopySway;
             const fy = startY + fruit.relY;
-            const radius = 8.25 * (fruit.growth / 100);
+            const radius = 16.5 * (fruit.growth / 100);
 
             if (radius > 1.0) {
               // Draw stem
@@ -313,13 +313,13 @@ export class FoliageSystem {
               ctx.lineWidth = 2.0;
               ctx.beginPath();
               ctx.moveTo(fx, fy - radius);
-              ctx.quadraticCurveTo(fx - 2, fy - radius - 4, fx - 4, fy - radius - 5);
+              ctx.quadraticCurveTo(fx - 4, fy - radius - 8, fx - 8, fy - radius - 10);
               ctx.stroke();
 
               // Draw green leaf on apple
               ctx.fillStyle = 'hsl(102, 50%, 35%)';
               ctx.beginPath();
-              ctx.ellipse(fx - 4, fy - radius - 5, 3.0, 1.5, -Math.PI / 4, 0, Math.PI * 2);
+              ctx.ellipse(fx - 8, fy - radius - 10, 6.0, 3.0, -Math.PI / 4, 0, Math.PI * 2);
               ctx.fill();
 
               // Draw red fruit
@@ -338,19 +338,19 @@ export class FoliageSystem {
       tree.fruits.forEach(fruit => {
         if (fruit.isFalling) {
           if (fruit.x >= minX - 30 && fruit.x <= maxX + 30 && fruit.y >= minY - 30 && fruit.y <= maxY + 30) {
-            const radius = 8.25;
+            const radius = 16.5;
             // Draw stem
             ctx.strokeStyle = 'hsl(28, 30%, 12%)';
             ctx.lineWidth = 2.0;
             ctx.beginPath();
             ctx.moveTo(fruit.x, fruit.y - radius);
-            ctx.quadraticCurveTo(fruit.x - 2, fruit.y - radius - 4, fruit.x - 4, fruit.y - radius - 5);
+            ctx.quadraticCurveTo(fruit.x - 4, fruit.y - radius - 8, fruit.x - 8, fruit.y - radius - 10);
             ctx.stroke();
 
             // Draw leaf
             ctx.fillStyle = 'hsl(102, 50%, 35%)';
             ctx.beginPath();
-            ctx.ellipse(fruit.x - 4, fruit.y - radius - 5, 3.0, 1.5, -Math.PI / 4, 0, Math.PI * 2);
+            ctx.ellipse(fruit.x - 8, fruit.y - radius - 10, 6.0, 3.0, -Math.PI / 4, 0, Math.PI * 2);
             ctx.fill();
 
             // Draw apple
