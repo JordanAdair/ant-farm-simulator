@@ -46,8 +46,8 @@ export class ColonyManager {
       const offset = (i - Math.floor(initialRoles.length / 2)) * 12;
       const num = this.nextAntNum++;
       const ant = new Ant(`ant-${num}`, startX + offset, startY, role, num, createDefaultBrain(), 1);
-      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 450 seconds)
-      ant.age = Math.random() * 450;
+      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 180 seconds)
+      ant.age = Math.random() * 180;
       this.ants.push(ant);
     });
   }
@@ -70,18 +70,23 @@ export class ColonyManager {
     const dt = 1 * speedMultiplier;
 
     // 1. Queen egg laying and energy
-    if (this.foodStockpile > 0) {
-      // Passive consumption
-      this.foodStockpile = Math.max(0, this.foodStockpile - CONFIG.FOOD_CONSUMPTION_RATE * 0.05 * dt);
-
-      this.queen.eggTimer -= (1 / 60) * dt;
-      if (this.queen.eggTimer <= 0) {
-        if (this.foodStockpile >= 10) {
-          this.foodStockpile -= 10;
-          this.layEgg();
-          this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
-        }
+    // The egg timer always ticks down, regardless of food stockpile!
+    this.queen.eggTimer -= (1 / 60) * dt;
+    if (this.queen.eggTimer <= 0) {
+      if (this.foodStockpile >= 10) {
+        this.foodStockpile -= 10;
+        this.layEgg();
+        this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
+      } else {
+        // Keep the egg timer at 0 so she lays immediately when food becomes available
+        this.queen.eggTimer = 0;
       }
+    }
+
+    if (this.foodStockpile > 0) {
+      // Passive consumption scales with the number of worker ants in the colony (aligned with OfflineProgression)
+      const passiveConsumption = this.ants.length * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * (dt / 60);
+      this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
     }
 
     // Queen pacing motion inside the central chamber
