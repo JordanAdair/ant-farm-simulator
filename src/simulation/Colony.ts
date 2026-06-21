@@ -15,7 +15,7 @@ export class ColonyManager {
 
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE; // queen chamber height
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE; // queen chamber height
 
     this.queen = {
       x: startX,
@@ -46,8 +46,8 @@ export class ColonyManager {
       const offset = (i - Math.floor(initialRoles.length / 2)) * 12;
       const num = this.nextAntNum++;
       const ant = new Ant(`ant-${num}`, startX + offset, startY, role, num, createDefaultBrain(), 1);
-      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 450 seconds)
-      ant.age = Math.random() * 450;
+      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 180 seconds)
+      ant.age = Math.random() * 180;
       this.ants.push(ant);
     });
   }
@@ -70,18 +70,23 @@ export class ColonyManager {
     const dt = 1 * speedMultiplier;
 
     // 1. Queen egg laying and energy
-    if (this.foodStockpile > 0) {
-      // Passive consumption
-      this.foodStockpile = Math.max(0, this.foodStockpile - CONFIG.FOOD_CONSUMPTION_RATE * 0.05 * dt);
-
-      this.queen.eggTimer -= (1 / 60) * dt;
-      if (this.queen.eggTimer <= 0) {
-        if (this.foodStockpile >= 10) {
-          this.foodStockpile -= 10;
-          this.layEgg();
-          this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
-        }
+    // The egg timer always ticks down, regardless of food stockpile!
+    this.queen.eggTimer -= (1 / 60) * dt;
+    if (this.queen.eggTimer <= 0) {
+      if (this.foodStockpile >= 10) {
+        this.foodStockpile -= 10;
+        this.layEgg();
+        this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
+      } else {
+        // Keep the egg timer at 0 so she lays immediately when food becomes available
+        this.queen.eggTimer = 0;
       }
+    }
+
+    if (this.foodStockpile > 0) {
+      // Passive consumption scales with the number of worker ants in the colony (aligned with OfflineProgression)
+      const passiveConsumption = this.ants.length * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * (dt / 60);
+      this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
     }
 
     // Queen pacing motion inside the central chamber
@@ -273,28 +278,26 @@ export class ColonyManager {
     });
 
     const total = this.ants.length;
-    const foragerDiff = foragers / total - foragerTarget;
-    const diggerDiff = diggers / total - diggerTarget;
-    const nurseDiff = nurses / total - nurseTarget;
+    const fDiff = foragers / total - foragerTarget;
+    const dDiff = diggers / total - diggerTarget;
+    const nDiff = nurses / total - nurseTarget;
 
-    // Periodically re-assign roles to match targets
-    // Don't do it instantly or too frequently to avoid role stuttering.
-    // Check if an ant is carrying nothing and idle, and reassign.
+    // Periodically re-assign roles if they deviate by more than 2% from target
     if (Math.random() < 0.01) {
-      if (foragerDiff > 0.1 && (diggerDiff < 0 || nurseDiff < 0)) {
+      if (fDiff > 0.02 && (dDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Forager' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = diggerDiff < nurseDiff ? 'Digger' : 'Nurse';
+          excessAnt.role = dDiff < nDiff ? 'Digger' : 'Nurse';
         }
-      } else if (diggerDiff > 0.1 && (foragerDiff < 0 || nurseDiff < 0)) {
+      } else if (dDiff > 0.02 && (fDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Digger' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = foragerDiff < nurseDiff ? 'Forager' : 'Nurse';
+          excessAnt.role = fDiff < nDiff ? 'Forager' : 'Nurse';
         }
-      } else if (nurseDiff > 0.1 && (foragerDiff < 0 || diggerDiff < 0)) {
+      } else if (nDiff > 0.02 && (fDiff < 0 || dDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Nurse' && a.cargo === 'None' && !a.isHoldingBrood);
         if (excessAnt) {
-          excessAnt.role = foragerDiff < diggerDiff ? 'Forager' : 'Digger';
+          excessAnt.role = fDiff < dDiff ? 'Forager' : 'Digger';
         }
       }
     }
@@ -312,26 +315,28 @@ export class ColonyManager {
     });
 
     const total = this.ants.length || 1;
-    const fRatio = foragers / total;
-    const dRatio = diggers / total;
+    const fDiff = 0.40 - (foragers / total);
+    const dDiff = 0.35 - (diggers / total);
+    const nDiff = 0.25 - (nurses / total);
 
-    if (fRatio < 0.40) return 'Forager';
-    if (dRatio < 0.35) return 'Digger';
+    // Return the role furthest below its target
+    if (fDiff >= dDiff && fDiff >= nDiff) return 'Forager';
+    if (dDiff >= nDiff) return 'Digger';
     return 'Nurse';
   }
 
   // Procedurally generate a perfectly straight, tiered excavation structure
   public generateProceduralNestPlan(entranceCol: number): ExcavationStep[] {
     const plan: ExcavationStep[] = [];
-    let currentRow = CONFIG.SKY_HEIGHT + 30; // Start below the starting Queen's chamber
+    let currentRow = CONFIG.SKY_HEIGHT + 38; // Start below the starting Queen's chamber
     
     // We procedurally generate 8 levels (tiers) of construction
     for (let L = 1; L <= 8; L++) {
       const startRow = currentRow;
-      const endRow = Math.min(CONFIG.ROWS - 5, currentRow + 20);
+      const endRow = Math.min(CONFIG.ROWS - 5, currentRow + 18);
       currentRow = endRow;
       
-      // 1. Extend Shaft (perfectly straight shaft cols 198 to 201)
+      // 1. Extend Shaft (perfectly straight shaft cols)
       plan.push({
         name: `Extend Shaft (Tier ${L})`,
         minCol: entranceCol - 2,
@@ -346,7 +351,7 @@ export class ColonyManager {
       const hasRight = layout === 1 || layout === 2;
       
       // Center the horizontal elements vertically inside the tier height
-      const pRow = startRow + 10;
+      const pRow = startRow + 9;
       
       if (hasLeft) {
         // Create left passage (3 cells high)
@@ -570,7 +575,7 @@ export class ColonyManager {
     this.nextAntNum = 1;
     
     const startX = entranceCol * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE;
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE;
     
     this.queen = {
       x: startX,
@@ -594,7 +599,7 @@ export class ColonyManager {
 
     // The Queen's chamber is the default nursery and food storage
     const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
-    const startY = (CONFIG.SKY_HEIGHT + 23) * CONFIG.CELL_SIZE;
+    const startY = (CONFIG.SKY_HEIGHT + 34) * CONFIG.CELL_SIZE;
     
     // Add default spots (offsets from chamber center)
     nurseries.push({ x: entranceX - 40, y: startY + 12 });
