@@ -13,14 +13,14 @@ describe('Environment', () => {
   it('should advance time correctly on tick update', () => {
     const env = new Environment();
     
-    // 30 updates = 1 game minute. Advance by 30 updates (speed = 1)
-    env.update(30, null as any, { x: 0, y: 0, zoom: 1 }, 800, 600, 1);
+    // 15 updates = 1 game minute. Advance by 15 updates (speed = 1)
+    env.update(15, null as any, { x: 0, y: 0, zoom: 1 }, 800, 600, 1);
     
     expect(env.minute).toBe(1);
     expect(env.minuteFraction).toBe(0);
 
-    // Advance by 1800 updates (60 minutes = 1 game hour)
-    env.update(1800, null as any, { x: 0, y: 0, zoom: 1 }, 800, 600, 1);
+    // Advance by 900 updates (60 minutes = 1 game hour)
+    env.update(900, null as any, { x: 0, y: 0, zoom: 1 }, 800, 600, 1);
     expect(env.hour).toBe(9);
     expect(env.minute).toBe(1);
   });

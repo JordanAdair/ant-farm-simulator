@@ -120,9 +120,10 @@ export function moveAndAvoidObstacles(
   if (grid.isValid(snapCol, snapRow)) {
     const currentCell = grid.getCell(snapCol, snapRow);
     if (currentCell && (currentCell.type === 'Sky' || currentCell.type === 'Food')) {
-      // Check for solid support in a 5x2 region (horizontal range of 2 cells, vertical range from currentRow to currentRow + 1)
+      // Check for solid support directly underneath or just 1 cell adjacent (3x2 region)
+      // This gives ants basic wall-clinging without letting them float across 4-cell wide holes
       let hasSupport = false;
-      for (let dc = -2; dc <= 2; dc++) {
+      for (let dc = -1; dc <= 1; dc++) {
         for (let dr = 0; dr <= 1; dr++) {
           if (grid.isValid(snapCol + dc, snapRow + dr)) {
             if (!grid.isWalkable(snapCol + dc, snapRow + dr)) {
@@ -169,7 +170,7 @@ export function moveAndAvoidObstacles(
     if (!found) {
       // Fallback: teleport to nest entrance
       entity.x = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      entity.y = (CONFIG.SKY_HEIGHT - 1) * CONFIG.CELL_SIZE;
+      entity.y = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
     }
   }
 

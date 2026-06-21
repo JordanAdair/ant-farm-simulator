@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FoliageSystem } from './Foliage';
+import { CONFIG } from './types';
 import { WorldGrid } from './Grid';
 
 describe('FoliageSystem', () => {
@@ -43,8 +44,8 @@ describe('FoliageSystem', () => {
     expect(logCalled).toBe(true);
 
     // Let it fall on update
-    // Initial Y is around surface height minus relY (surface row is 130 * 4 = 520, relY is e.g. -270, so y is ~250)
-    expect(fruit.y).toBe(130 * 4 + fruit.relY);
+    // Initial Y is around surface height minus relY
+    expect(fruit.y).toBe(CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE + fruit.relY);
 
     // Run updates to simulate gravity and fall
     let hitGround = false;

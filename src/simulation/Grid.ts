@@ -1,4 +1,4 @@
-import { CONFIG } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
 import type { CellType, Position } from './types';
 
 export interface Cell {
@@ -78,9 +78,21 @@ export class WorldGrid {
     const entranceCol = this.nestEntranceCol;
     const skyHeight = CONFIG.SKY_HEIGHT;
 
-    // 1. Vertical main shaft (straight and clean)
-    const shaftDepth = 30;
-    for (let r = skyHeight; r < skyHeight + shaftDepth; r++) {
+    const centerRow = STARTING_CHAMBER_CENTER_ROW;
+
+    // Generate random chamber dimensions around the original size (approx 33 cols by 8 rows = 264 cells)
+    const width = 28 + Math.floor(Math.random() * 9); // 28 to 36 columns
+    const height = 7 + Math.floor(Math.random() * 3); // 7 to 9 rows
+    const halfWidth = Math.floor(width / 2);
+    const halfHeight = Math.floor(height / 2);
+
+    const minCol = entranceCol - halfWidth;
+    const maxCol = entranceCol + (width - halfWidth - 1);
+    const minRow = centerRow - halfHeight;
+    const maxRow = minRow + height - 1;
+
+    // 1. Vertical main shaft (straight and clean) from surface down to the chamber
+    for (let r = skyHeight; r < minRow; r++) {
       for (let c = entranceCol - 2; c <= entranceCol + 1; c++) {
         if (this.isValid(c, r)) {
           this.clearCell(c, r);
@@ -88,18 +100,16 @@ export class WorldGrid {
       }
     }
 
-    // 2. Central Queen chamber (bottom of the shaft, rounded corners)
-    const chamberRow = skyHeight + shaftDepth;
-    const chamberHalfWidth = 16;
-    const chamberHeight = 8;
-    for (let c = entranceCol - chamberHalfWidth; c <= entranceCol + chamberHalfWidth; c++) {
-      for (let r = chamberRow; r < chamberRow + chamberHeight; r++) {
+    // 2. Central Queen chamber (random shape, conforming to the new corner styling)
+    for (let c = minCol; c <= maxCol; c++) {
+      for (let r = minRow; r <= maxRow; r++) {
         if (this.isValid(c, r)) {
-          const dx = Math.min(c - (entranceCol - chamberHalfWidth), (entranceCol + chamberHalfWidth) - c);
-          const dy = Math.min(r - chamberRow, (chamberRow + chamberHeight - 1) - r);
-          if (dx < 6 && dy < 3) {
-            const dist = (6 - dx) ** 2 + (3 - dy) ** 2;
-            if (dist > 25) {
+          // Conform to new corner styling
+          const dx = Math.min(c - minCol, maxCol - c);
+          const dy = Math.min(r - minRow, maxRow - r);
+          if (dx < 3 && dy < 2) {
+            const dist = (3 - dx) ** 2 + (2 - dy) ** 2;
+            if (dist > 5) {
               continue; // Skip clearing this cell to round the chamber corner
             }
           }

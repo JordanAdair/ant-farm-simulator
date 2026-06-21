@@ -214,8 +214,8 @@ export class SimulationEngine {
       const ant = this.colony.ants[i];
       const prevCargo = ant.cargo;
       
-      // Update age
-      ant.age += (1 / 60) * mult;
+      // Update age (in game days where 1 day = 7200 frames)
+      ant.age += (1 / 7200) * mult;
       
       // Lifecycle check: old age, starvation, or workplace accidents
       let died = false;

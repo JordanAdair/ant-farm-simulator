@@ -40,7 +40,7 @@ export class Environment {
       const hours = type === 'Sunny' ? (4 + Math.random() * 4) : (2 + Math.random() * 2);
       this.weatherQueue.push({
         type,
-        durationFrames: Math.round(hours * 1800),
+        durationFrames: Math.round(hours * 900),
       });
     }
   }
@@ -67,10 +67,10 @@ export class Environment {
     this.rainParticles = [];
     this.splashParticles = [];
     if (newWeather === 'Sunny') {
-      this.weatherTargetDuration = Math.round((4 + Math.random() * 4) * 1800);
+      this.weatherTargetDuration = Math.round((4 + Math.random() * 4) * 900);
       addLog('The weather clears up and is now SUNNY.', 'system');
     } else {
-      this.weatherTargetDuration = Math.round((2 + Math.random() * 2) * 1800);
+      this.weatherTargetDuration = Math.round((2 + Math.random() * 2) * 900);
       addLog('Rain clouds roll in. It is now RAINY.', 'system');
     }
   }
@@ -140,7 +140,7 @@ export class Environment {
     const currentRemainingFrames = Math.max(0, this.weatherTargetDuration - this.weatherTimer);
     forecast.push({
       type: this.weather,
-      durationHours: Number((currentRemainingFrames / 1800).toFixed(1)),
+      durationHours: Number((currentRemainingFrames / 900).toFixed(1)),
       delayHours: 0
     });
 
@@ -149,8 +149,8 @@ export class Environment {
       const item = this.weatherQueue[i];
       forecast.push({
         type: item.type,
-        durationHours: Number((item.durationFrames / 1800).toFixed(1)),
-        delayHours: Number((cumulativeDelay / 1800).toFixed(1))
+        durationHours: Number((item.durationFrames / 900).toFixed(1)),
+        delayHours: Number((cumulativeDelay / 900).toFixed(1))
       });
       cumulativeDelay += item.durationFrames;
     }
@@ -171,9 +171,9 @@ export class Environment {
 
     // Clock updates
     this.minuteFraction += mult;
-    if (this.minuteFraction >= 30) {
-      const minutesPassed = Math.floor(this.minuteFraction / 30);
-      this.minuteFraction = this.minuteFraction % 30;
+    if (this.minuteFraction >= 15) {
+      const minutesPassed = Math.floor(this.minuteFraction / 15);
+      this.minuteFraction = this.minuteFraction % 15;
       this.minute += minutesPassed;
       if (this.minute >= 60) {
         const hoursPassed = Math.floor(this.minute / 60);
