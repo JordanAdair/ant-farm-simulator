@@ -85,7 +85,7 @@ export class Ant implements LocomotionEntity {
     this.desiredAngle = this.angle;
 
     this.age = 0;
-    this.maxAge = 600 + Math.random() * 300; // 10 to 15 minutes of life at 1x speed
+    this.maxAge = 1200 + Math.random() * 600; // 20 to 30 minutes of life at 1x speed
   }
 
   public getFitness(): number {

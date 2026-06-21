@@ -88,10 +88,10 @@ export const CONFIG = {
   ANT_MAX_ENERGY: 100,
 
   // Brood growth settings
-  EGG_HATCH_TIME: 120, // seconds at 1x
-  LARVA_GROWTH_TIME: 180, // seconds
-  PUPA_HATCH_TIME: 150, // seconds
-  QUEEN_EGG_INTERVAL: 45, // lays egg every 45s if food > 0
+  EGG_HATCH_TIME: 60, // seconds at 1x
+  LARVA_GROWTH_TIME: 90, // seconds
+  PUPA_HATCH_TIME: 75, // seconds
+  QUEEN_EGG_INTERVAL: 20, // lays egg every 20s if food > 0
 
   // Food / Consumption rates
   FOOD_SPAWN_INTERVAL: 600, // seconds

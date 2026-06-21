@@ -278,28 +278,26 @@ export class ColonyManager {
     });
 
     const total = this.ants.length;
-    const foragerDiff = foragers / total - foragerTarget;
-    const diggerDiff = diggers / total - diggerTarget;
-    const nurseDiff = nurses / total - nurseTarget;
+    const fDiff = foragers / total - foragerTarget;
+    const dDiff = diggers / total - diggerTarget;
+    const nDiff = nurses / total - nurseTarget;
 
-    // Periodically re-assign roles to match targets
-    // Don't do it instantly or too frequently to avoid role stuttering.
-    // Check if an ant is carrying nothing and idle, and reassign.
+    // Periodically re-assign roles if they deviate by more than 2% from target
     if (Math.random() < 0.01) {
-      if (foragerDiff > 0.1 && (diggerDiff < 0 || nurseDiff < 0)) {
+      if (fDiff > 0.02 && (dDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Forager' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = diggerDiff < nurseDiff ? 'Digger' : 'Nurse';
+          excessAnt.role = dDiff < nDiff ? 'Digger' : 'Nurse';
         }
-      } else if (diggerDiff > 0.1 && (foragerDiff < 0 || nurseDiff < 0)) {
+      } else if (dDiff > 0.02 && (fDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Digger' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = foragerDiff < nurseDiff ? 'Forager' : 'Nurse';
+          excessAnt.role = fDiff < nDiff ? 'Forager' : 'Nurse';
         }
-      } else if (nurseDiff > 0.1 && (foragerDiff < 0 || diggerDiff < 0)) {
+      } else if (nDiff > 0.02 && (fDiff < 0 || dDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Nurse' && a.cargo === 'None' && !a.isHoldingBrood);
         if (excessAnt) {
-          excessAnt.role = foragerDiff < diggerDiff ? 'Forager' : 'Digger';
+          excessAnt.role = fDiff < dDiff ? 'Forager' : 'Digger';
         }
       }
     }
@@ -317,11 +315,13 @@ export class ColonyManager {
     });
 
     const total = this.ants.length || 1;
-    const fRatio = foragers / total;
-    const dRatio = diggers / total;
+    const fDiff = 0.40 - (foragers / total);
+    const dDiff = 0.35 - (diggers / total);
+    const nDiff = 0.25 - (nurses / total);
 
-    if (fRatio < 0.40) return 'Forager';
-    if (dRatio < 0.35) return 'Digger';
+    // Return the role furthest below its target
+    if (fDiff >= dDiff && fDiff >= nDiff) return 'Forager';
+    if (dDiff >= nDiff) return 'Digger';
     return 'Nurse';
   }
 
