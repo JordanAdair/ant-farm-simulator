@@ -88,10 +88,10 @@ export const CONFIG = {
   ANT_MAX_ENERGY: 100,
 
   // Brood growth settings
-  EGG_HATCH_TIME: 120, // seconds at 1x
-  LARVA_GROWTH_TIME: 180, // seconds
-  PUPA_HATCH_TIME: 150, // seconds
-  QUEEN_EGG_INTERVAL: 45, // lays egg every 45s if food > 0
+  EGG_HATCH_TIME: 60, // seconds at 1x
+  LARVA_GROWTH_TIME: 90, // seconds
+  PUPA_HATCH_TIME: 75, // seconds
+  QUEEN_EGG_INTERVAL: 20, // lays egg every 20s if food > 0
 
   // Food / Consumption rates
   FOOD_SPAWN_INTERVAL: 600, // seconds
@@ -108,7 +108,7 @@ export const CONFIG = {
   MAX_OFFLINE_TIME: 86400 * 7, // 1 week max
 };
 
-export const STARTING_CHAMBER_CENTER_ROW = 300;
+export const STARTING_CHAMBER_CENTER_ROW = CONFIG.SKY_HEIGHT + 34;
 
 export interface ExcavationStep {
   name: string;
@@ -123,42 +123,42 @@ export interface ExcavationStep {
 
 export const EXCAVATION_PLAN: ExcavationStep[] = [
   // Tier 1
-  { name: 'Extend Shaft (Tier 1)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 1, maxRow: CONFIG.SKY_HEIGHT + 17 },
-  { name: 'Left Chamber (Tier 1)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 7, maxRow: CONFIG.SKY_HEIGHT + 11 },
-  { name: 'Right Chamber (Tier 1)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 7, maxRow: CONFIG.SKY_HEIGHT + 11 },
+  { name: 'Extend Shaft (Tier 1)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 38, maxRow: CONFIG.SKY_HEIGHT + 56 },
+  { name: 'Left Chamber (Tier 1)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 45, maxRow: CONFIG.SKY_HEIGHT + 49 },
+  { name: 'Right Chamber (Tier 1)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 45, maxRow: CONFIG.SKY_HEIGHT + 49 },
 
   // Tier 2
-  { name: 'Extend Shaft (Tier 2)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 17, maxRow: CONFIG.SKY_HEIGHT + 37 },
-  { name: 'Left Chamber (Tier 2)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 27, maxRow: CONFIG.SKY_HEIGHT + 31 },
-  { name: 'Right Chamber (Tier 2)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 27, maxRow: CONFIG.SKY_HEIGHT + 31 },
+  { name: 'Extend Shaft (Tier 2)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 56, maxRow: CONFIG.SKY_HEIGHT + 74 },
+  { name: 'Left Chamber (Tier 2)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 63, maxRow: CONFIG.SKY_HEIGHT + 67 },
+  { name: 'Right Chamber (Tier 2)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 63, maxRow: CONFIG.SKY_HEIGHT + 67 },
 
   // Tier 3
-  { name: 'Extend Shaft (Tier 3)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 37, maxRow: CONFIG.SKY_HEIGHT + 57 },
-  { name: 'Left Chamber (Tier 3)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 47, maxRow: CONFIG.SKY_HEIGHT + 51 },
-  { name: 'Right Chamber (Tier 3)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 47, maxRow: CONFIG.SKY_HEIGHT + 51 },
+  { name: 'Extend Shaft (Tier 3)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 74, maxRow: CONFIG.SKY_HEIGHT + 92 },
+  { name: 'Left Chamber (Tier 3)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 81, maxRow: CONFIG.SKY_HEIGHT + 85 },
+  { name: 'Right Chamber (Tier 3)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 81, maxRow: CONFIG.SKY_HEIGHT + 85 },
 
   // Tier 4
-  { name: 'Extend Shaft (Tier 4)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 57, maxRow: CONFIG.SKY_HEIGHT + 77 },
-  { name: 'Left Chamber (Tier 4)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 67, maxRow: CONFIG.SKY_HEIGHT + 71 },
-  { name: 'Right Chamber (Tier 4)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 67, maxRow: CONFIG.SKY_HEIGHT + 71 },
+  { name: 'Extend Shaft (Tier 4)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 92, maxRow: CONFIG.SKY_HEIGHT + 110 },
+  { name: 'Left Chamber (Tier 4)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 99, maxRow: CONFIG.SKY_HEIGHT + 103 },
+  { name: 'Right Chamber (Tier 4)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 99, maxRow: CONFIG.SKY_HEIGHT + 103 },
 
   // Tier 5
-  { name: 'Extend Shaft (Tier 5)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 77, maxRow: CONFIG.SKY_HEIGHT + 97 },
-  { name: 'Left Chamber (Tier 5)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 87, maxRow: CONFIG.SKY_HEIGHT + 91 },
-  { name: 'Right Chamber (Tier 5)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 87, maxRow: CONFIG.SKY_HEIGHT + 91 },
+  { name: 'Extend Shaft (Tier 5)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 110, maxRow: CONFIG.SKY_HEIGHT + 128 },
+  { name: 'Left Chamber (Tier 5)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 117, maxRow: CONFIG.SKY_HEIGHT + 121 },
+  { name: 'Right Chamber (Tier 5)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 117, maxRow: CONFIG.SKY_HEIGHT + 121 },
 
   // Tier 6
-  { name: 'Extend Shaft (Tier 6)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 97, maxRow: CONFIG.SKY_HEIGHT + 117 },
-  { name: 'Left Chamber (Tier 6)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 107, maxRow: CONFIG.SKY_HEIGHT + 111 },
-  { name: 'Right Chamber (Tier 6)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 107, maxRow: CONFIG.SKY_HEIGHT + 111 },
+  { name: 'Extend Shaft (Tier 6)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 128, maxRow: CONFIG.SKY_HEIGHT + 146 },
+  { name: 'Left Chamber (Tier 6)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 135, maxRow: CONFIG.SKY_HEIGHT + 139 },
+  { name: 'Right Chamber (Tier 6)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 135, maxRow: CONFIG.SKY_HEIGHT + 139 },
 
   // Tier 7
-  { name: 'Extend Shaft (Tier 7)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 117, maxRow: CONFIG.SKY_HEIGHT + 137 },
-  { name: 'Left Chamber (Tier 7)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 127, maxRow: CONFIG.SKY_HEIGHT + 131 },
-  { name: 'Right Chamber (Tier 7)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 127, maxRow: CONFIG.SKY_HEIGHT + 131 },
+  { name: 'Extend Shaft (Tier 7)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 146, maxRow: CONFIG.SKY_HEIGHT + 164 },
+  { name: 'Left Chamber (Tier 7)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 153, maxRow: CONFIG.SKY_HEIGHT + 157 },
+  { name: 'Right Chamber (Tier 7)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 153, maxRow: CONFIG.SKY_HEIGHT + 157 },
 
   // Tier 8
-  { name: 'Extend Shaft (Tier 8)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 137, maxRow: CONFIG.SKY_HEIGHT + 160 },
-  { name: 'Left Chamber (Tier 8)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 147, maxRow: CONFIG.SKY_HEIGHT + 151 },
-  { name: 'Right Chamber (Tier 8)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 147, maxRow: CONFIG.SKY_HEIGHT + 151 },
+  { name: 'Extend Shaft (Tier 8)', minCol: 199, maxCol: 200, minRow: CONFIG.SKY_HEIGHT + 164, maxRow: CONFIG.SKY_HEIGHT + 185 },
+  { name: 'Left Chamber (Tier 8)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 171, maxRow: CONFIG.SKY_HEIGHT + 175 },
+  { name: 'Right Chamber (Tier 8)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 171, maxRow: CONFIG.SKY_HEIGHT + 175 },
 ];

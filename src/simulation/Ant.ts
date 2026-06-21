@@ -4,6 +4,8 @@ import { isCellInsidePlanStep } from './NestPlanner';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { findPath } from './Pathfinder';
+import { moveAndAvoidObstacles, normalizeAngle } from './Locomotion';
+import type { LocomotionEntity } from './Locomotion';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -18,7 +20,7 @@ export function createDefaultBrain(): AntBrain {
   };
 }
 
-export class Ant {
+export class Ant implements LocomotionEntity {
   public id: string;
   public x: number;
   public y: number;
@@ -89,7 +91,7 @@ export class Ant {
     this.desiredAngle = this.angle;
 
     this.age = 0;
-    this.maxAge = 30 + Math.random() * 60; // 30 to 90 in-game days
+    this.maxAge = 1200 + Math.random() * 600; // 20 to 30 minutes of life at 1x speed
   }
 
   public getFitness(): number {
@@ -178,7 +180,7 @@ export class Ant {
     }
 
     // Apply movement based on current angle
-    this.moveAndAvoidObstacles(grid, speed);
+    moveAndAvoidObstacles(this, grid, speed);
   }
 
   // --- RESTING / REFUELLING ---
@@ -803,210 +805,7 @@ export class Ant {
       // Steer using neural network by up to 0.15 radians
       this.angle += output * 0.15 * speedMultiplier;
     }
-    this.normalizeAngle();
-  }
-
-  // --- COLLISION RESPONSE ---
-  private moveAndAvoidObstacles(grid: WorldGrid, speed: number) {
-    // 1. Gravity on the surface (Only for cells that are Sky or Food)
-    const currentCol = Math.floor(this.x / CONFIG.CELL_SIZE);
-    const currentRow = Math.floor(this.y / CONFIG.CELL_SIZE);
-    
-    if (grid.isValid(currentCol, currentRow)) {
-      const currentCell = grid.getCell(currentCol, currentRow);
-      if (currentCell && (currentCell.type === 'Sky' || currentCell.type === 'Food')) {
-        // Check for solid support directly underneath or just 1 cell adjacent (3x2 region)
-        // This gives ants basic wall-clinging without letting them float across 4-cell wide holes
-        let hasSupport = false;
-        for (let dc = -1; dc <= 1; dc++) {
-          for (let dr = 0; dr <= 1; dr++) {
-            if (grid.isValid(currentCol + dc, currentRow + dr)) {
-              if (!grid.isWalkable(currentCol + dc, currentRow + dr)) {
-                hasSupport = true;
-                break;
-              }
-            }
-          }
-          if (hasSupport) break;
-        }
-
-        // Only apply gravity if the ant has no physical support nearby (i.e. not climbing a wall, slope, or standing on a block)
-        if (!hasSupport) {
-          // Fall down due to gravity (velocity scales with game speed)
-          this.y += 1.5 * (speed / CONFIG.ANT_SPEED);
-        }
-      }
-    }
-
-    // 2. Escape hatch: If we are trapped inside a solid tile, find the nearest walkable tile in a 5-cell radius and snap to it.
-    const snapCol = Math.floor(this.x / CONFIG.CELL_SIZE);
-    const snapRow = Math.floor(this.y / CONFIG.CELL_SIZE);
-    if (!grid.isWalkable(snapCol, snapRow)) {
-      let found = false;
-      for (let r = 1; r <= 5 && !found; r++) {
-        const searchOffsets = [
-          [0, -r], [0, r], [-r, 0], [r, 0],
-          [-r, -r], [-r, r], [r, -r], [r, r],
-          [-r, -Math.floor(r/2)], [-r, Math.floor(r/2)],
-          [r, -Math.floor(r/2)], [r, Math.floor(r/2)],
-          [-Math.floor(r/2), -r], [Math.floor(r/2), -r],
-          [-Math.floor(r/2), r], [Math.floor(r/2), r]
-        ];
-        for (const [dc, dr] of searchOffsets) {
-          const tc = snapCol + dc;
-          const tr = snapRow + dr;
-          if (grid.isWalkable(tc, tr)) {
-            // Snap to center of walkable cell to clear solid boundary
-            this.x = tc * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2;
-            this.y = tr * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2;
-            found = true;
-            break;
-          }
-        }
-      }
-      if (!found) {
-        // Fallback: teleport to nest entrance
-        this.x = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        this.y = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-      }
-    }
-
-    // Wander slightly to look alive (only when not in collision cooldown)
-    if (this.collisionCooldown <= 0) {
-      this.angle += (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
-    }
-
-    let nextX = this.x + Math.cos(this.angle) * speed;
-    let nextY = this.y + Math.sin(this.angle) * speed;
-
-    const cushion = 1.5;
-    const lookAheadX = nextX + Math.cos(this.angle) * cushion;
-    const lookAheadY = nextY + Math.sin(this.angle) * cushion;
-    const nextCol = Math.floor(lookAheadX / CONFIG.CELL_SIZE);
-    const nextRow = Math.floor(lookAheadY / CONFIG.CELL_SIZE);
-
-    if (grid.isWalkable(nextCol, nextRow)) {
-      this.x = nextX;
-      this.y = nextY;
-    } else {
-      // Collision detected! Try sliding horizontally or vertically.
-      const canSlideHorizontal = grid.isWalkable(nextCol, snapRow);
-      const canSlideVertical = grid.isWalkable(snapCol, nextRow);
-
-      const slideHorizontal = () => {
-        const slideDir = Math.cos(this.angle) >= 0 ? 1 : -1;
-        this.x += slideDir * speed;
-        const targetAngle = slideDir === 1 ? 0 : Math.PI;
-        this.steerTowardsAngle(targetAngle, 0.2);
-        this.collisionCooldown = 6;
-        this.collisions++;
-        this.collisionTimer = 20;
-      };
-
-      const slideVertical = () => {
-        let slideDir = Math.sin(this.angle) > 0 ? 1 : -1;
-        if (Math.abs(Math.sin(this.angle)) < 0.1) {
-          if (snapRow < CONFIG.SKY_HEIGHT + 5) {
-            slideDir = -1; // climb up
-          } else {
-            slideDir = Math.random() < 0.5 ? 1 : -1;
-          }
-        }
-        this.y += slideDir * speed;
-        const targetAngle = slideDir === 1 ? Math.PI / 2 : -Math.PI / 2;
-        this.steerTowardsAngle(targetAngle, 0.2);
-        this.collisionCooldown = 6;
-        this.collisions++;
-        this.collisionTimer = 20;
-      };
-
-      if (canSlideHorizontal && !canSlideVertical) {
-        slideHorizontal();
-      } else if (canSlideVertical && !canSlideHorizontal) {
-        slideVertical();
-      } else if (canSlideHorizontal && canSlideVertical) {
-        // Diagonal corner! Pick the major axis of movement to slide along
-        if (Math.abs(Math.cos(this.angle)) > Math.abs(Math.sin(this.angle))) {
-          slideHorizontal();
-        } else {
-          slideVertical();
-        }
-      } else {
-        // Complete block!Both directions blocked (corner or head-on collision)
-        // Find a walkable direction by scanning alternative angles
-        let foundWalkable = false;
-        const angleScans = [0.4, -0.4, 0.8, -0.8, 1.2, -1.2, Math.PI];
-
-        for (const da of angleScans) {
-          const scanAngle = this.angle + da;
-          const checkX = this.x + Math.cos(scanAngle) * CONFIG.CELL_SIZE;
-          const checkY = this.y + Math.sin(scanAngle) * CONFIG.CELL_SIZE;
-          const checkCol = Math.floor(checkX / CONFIG.CELL_SIZE);
-          const checkRow = Math.floor(checkY / CONFIG.CELL_SIZE);
-
-          if (grid.isWalkable(checkCol, checkRow)) {
-            this.angle = scanAngle;
-            // Move forward by speed
-            this.x += Math.cos(scanAngle) * speed;
-            this.y += Math.sin(scanAngle) * speed;
-            this.collisionCooldown = 12; // 12 updates cooldown
-            foundWalkable = true;
-            this.collisions++;
-            this.collisionTimer = 20;
-            break;
-          }
-        }
-
-        if (!foundWalkable) {
-          // Complete turnaround
-          this.angle += Math.PI;
-          this.collisionCooldown = 15;
-          this.collisions++;
-          this.collisionTimer = 20;
-        }
-      }
-    }
-
-    // Hard boundary clamping and bounce
-    const maxX = grid.cols * CONFIG.CELL_SIZE - 4;
-    const maxY = grid.rows * CONFIG.CELL_SIZE - 4;
-
-    if (this.x <= 4) {
-      this.x = 4;
-      this.angle = Math.PI - this.angle; // Bounce horizontally
-      this.collisions++;
-      this.collisionTimer = 20;
-    } else if (this.x >= maxX) {
-      this.x = maxX;
-      this.angle = Math.PI - this.angle; // Bounce horizontally
-      this.collisions++;
-      this.collisionTimer = 20;
-    }
-
-    if (this.y <= 4) {
-      this.y = 4;
-      this.angle = -this.angle; // Bounce vertically
-      this.collisions++;
-      this.collisionTimer = 20;
-    } else if (this.y >= maxY) {
-      this.y = maxY;
-      this.angle = -this.angle; // Bounce vertically
-      this.collisions++;
-      this.collisionTimer = 20;
-    }
-
-    this.normalizeAngle();
-  }
-
-  private steerTowardsAngle(target: number, rate: number) {
-    let diff = target - this.angle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    this.angle += diff * rate;
-    this.normalizeAngle();
-  }
-
-  private normalizeAngle() {
-    this.angle = Math.atan2(Math.sin(this.angle), Math.cos(this.angle));
+    this.angle = normalizeAngle(this.angle);
   }
 
   private getAngleTowardsTarget(grid: WorldGrid, targetX: number, targetY: number): number {

@@ -37,12 +37,11 @@ export class ColonyManager {
   }
 
   private spawnInitialColony(startX: number, startY: number) {
-    // 7 foragers, 10 diggers, 3 nurses
+    // 3 foragers, 4 diggers, 1 nurse (starts small to allow growth progression)
     const initialRoles: AntRole[] = [
-      'Forager', 'Forager', 'Forager', 'Forager', 'Forager', 'Forager', 'Forager',
-      'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
-      'Digger', 'Digger', 'Digger', 'Digger', 'Digger', 
-      'Nurse', 'Nurse', 'Nurse'
+      'Forager', 'Forager', 'Forager',
+      'Digger', 'Digger', 'Digger', 'Digger',
+      'Nurse'
     ];
     initialRoles.forEach((role) => {
       // Give them a random position within the central chamber
@@ -50,8 +49,8 @@ export class ColonyManager {
       const dy = (Math.random() - 0.5) * 10;
       const num = this.nextAntNum++;
       const ant = new Ant(`ant-${num}`, startX + dx, startY + dy, role, num, createDefaultBrain(), 1);
-      // Randomize initial age so they die at staggered times
-      ant.age = Math.random() * 15; // 0 to 15 in-game days
+      // Randomize initial age so they die at staggered times (start already partially aged: 0 to 180 seconds)
+      ant.age = Math.random() * 180;
       this.ants.push(ant);
     });
   }
@@ -74,18 +73,23 @@ export class ColonyManager {
     const dt = 1 * speedMultiplier;
 
     // 1. Queen egg laying and energy
-    if (this.foodStockpile > 0) {
-      // Passive consumption
-      this.foodStockpile = Math.max(0, this.foodStockpile - CONFIG.FOOD_CONSUMPTION_RATE * 0.05 * dt);
-
-      this.queen.eggTimer -= (1 / 60) * dt;
-      if (this.queen.eggTimer <= 0) {
-        if (this.foodStockpile >= 10) {
-          this.foodStockpile -= 10;
-          this.layEgg();
-          this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
-        }
+    // The egg timer always ticks down, regardless of food stockpile!
+    this.queen.eggTimer -= (1 / 60) * dt;
+    if (this.queen.eggTimer <= 0) {
+      if (this.foodStockpile >= 10) {
+        this.foodStockpile -= 10;
+        this.layEgg();
+        this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
+      } else {
+        // Keep the egg timer at 0 so she lays immediately when food becomes available
+        this.queen.eggTimer = 0;
       }
+    }
+
+    if (this.foodStockpile > 0) {
+      // Passive consumption scales with the number of worker ants in the colony (aligned with OfflineProgression)
+      const passiveConsumption = this.ants.length * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * (dt / 60);
+      this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
     }
 
     // Queen pacing motion inside the central chamber
@@ -277,28 +281,26 @@ export class ColonyManager {
     });
 
     const total = this.ants.length;
-    const foragerDiff = foragers / total - foragerTarget;
-    const diggerDiff = diggers / total - diggerTarget;
-    const nurseDiff = nurses / total - nurseTarget;
+    const fDiff = foragers / total - foragerTarget;
+    const dDiff = diggers / total - diggerTarget;
+    const nDiff = nurses / total - nurseTarget;
 
-    // Periodically re-assign roles to match targets
-    // Don't do it instantly or too frequently to avoid role stuttering.
-    // Check if an ant is carrying nothing and idle, and reassign.
+    // Periodically re-assign roles if they deviate by more than 2% from target
     if (Math.random() < 0.01) {
-      if (foragerDiff > 0.1 && (diggerDiff < 0 || nurseDiff < 0)) {
+      if (fDiff > 0.02 && (dDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Forager' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = diggerDiff < nurseDiff ? 'Digger' : 'Nurse';
+          excessAnt.role = dDiff < nDiff ? 'Digger' : 'Nurse';
         }
-      } else if (diggerDiff > 0.1 && (foragerDiff < 0 || nurseDiff < 0)) {
+      } else if (dDiff > 0.02 && (fDiff < 0 || nDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Digger' && a.cargo === 'None');
         if (excessAnt) {
-          excessAnt.role = foragerDiff < nurseDiff ? 'Forager' : 'Nurse';
+          excessAnt.role = fDiff < nDiff ? 'Forager' : 'Nurse';
         }
-      } else if (nurseDiff > 0.1 && (foragerDiff < 0 || diggerDiff < 0)) {
+      } else if (nDiff > 0.02 && (fDiff < 0 || dDiff < 0)) {
         const excessAnt = this.ants.find(a => a.role === 'Nurse' && a.cargo === 'None' && !a.isHoldingBrood);
         if (excessAnt) {
-          excessAnt.role = foragerDiff < diggerDiff ? 'Forager' : 'Digger';
+          excessAnt.role = fDiff < dDiff ? 'Forager' : 'Digger';
         }
       }
     }
@@ -316,13 +318,16 @@ export class ColonyManager {
     });
 
     const total = this.ants.length || 1;
-    const fRatio = foragers / total;
-    const dRatio = diggers / total;
+    const fDiff = 0.40 - (foragers / total);
+    const dDiff = 0.35 - (diggers / total);
+    const nDiff = 0.25 - (nurses / total);
 
-    if (fRatio < 0.40) return 'Forager';
-    if (dRatio < 0.35) return 'Digger';
+    // Return the role furthest below its target
+    if (fDiff >= dDiff && fDiff >= nDiff) return 'Forager';
+    if (dDiff >= nDiff) return 'Digger';
     return 'Nurse';
   }
+
 
 
   public getActiveExcavationStep(grid: WorldGrid): ExcavationStep | null {

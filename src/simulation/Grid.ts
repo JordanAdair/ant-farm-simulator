@@ -122,7 +122,7 @@ export class WorldGrid {
     this.spawnFoodAt(entranceCol - 25, skyHeight - 1, 300); // near nest (Col 175)
     this.spawnFoodAt(entranceCol - 120, skyHeight - 1, 250); // under outer canopy of tree 1 (Col 80)
     this.spawnFoodAt(entranceCol + 60, skyHeight - 1, 250); // under outer canopy of tree 2 (Col 260)
-    this.spawnFoodAt(entranceCol + 155, skyHeight - 1, 250); // under outer canopy of tree 3 (Col 355)
+    this.spawnFoodAt(entranceCol + 155, skyHeight - 1, 250); // under outer canopy of tree 3 (Col 355) // under outer canopy of tree 3 // under outer canopy of tree 3 (Col 355)
   }
 
   public isValid(col: number, row: number): boolean {
