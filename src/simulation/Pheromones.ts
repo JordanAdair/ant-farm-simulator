@@ -59,11 +59,40 @@ export class PheromoneGrid {
     const decay = CONFIG.PHEROMONE_DECAY * speedMultiplier;
     const diffRate = CONFIG.PHEROMONE_DIFFUSION;
 
+    // Pre-pass: collect all active food cell coordinates
+    const activeFoodCells: [number, number][] = [];
+    for (let c = 0; c < this.cols; c++) {
+      for (let r = 0; r < this.rows; r++) {
+        const cell = grid.cells[c][r];
+        if (cell.type === 'Food' && cell.foodAmount > 0) {
+          activeFoodCells.push([c, r]);
+        }
+      }
+    }
+
     // 1. Decay and prepare temp grids
     for (let c = 0; c < this.cols; c++) {
       for (let r = 0; r < this.rows; r++) {
         this.homeGrid[c][r] = Math.max(0, this.homeGrid[c][r] - decay);
-        this.foodGrid[c][r] = Math.max(0, this.foodGrid[c][r] - decay);
+
+        let currentDecay = decay;
+        if (this.foodGrid[c][r] > 0) {
+          let depleted = true;
+          if (activeFoodCells.length > 0) {
+            for (let i = 0; i < activeFoodCells.length; i++) {
+              const [fc, fr] = activeFoodCells[i];
+              const dist = Math.abs(fc - c) + Math.abs(fr - r);
+              if (dist <= 80) {
+                depleted = false;
+                break;
+              }
+            }
+          }
+          if (depleted) {
+            currentDecay = decay * 5;
+          }
+        }
+        this.foodGrid[c][r] = Math.max(0, this.foodGrid[c][r] - currentDecay);
         
         this.tempHomeGrid[c][r] = this.homeGrid[c][r];
         this.tempFoodGrid[c][r] = this.foodGrid[c][r];
