@@ -1,11 +1,12 @@
 import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
-import type { CellType, Position } from './types';
+import type { CellType, Position, FoodType } from './types';
 
 export interface Cell {
   type: CellType;
   foodAmount: number;
   noiseVal: number; // for visual grit texturing
   durability?: number; // rock durability (5 hits to clear)
+  foodType?: FoodType;
 }
 
 export class WorldGrid {
@@ -182,9 +183,9 @@ export class WorldGrid {
     return false;
   }
 
-  public spawnFoodAt(col: number, row: number, amount: number) {
+  public spawnFoodAt(col: number, row: number, amount: number, foodType: FoodType = 'Apple') {
     // Fill a small cluster with food cells
-    const radius = 3;
+    const radius = amount > 300 ? 5 : 3;
     for (let c = col - radius; c <= col + radius; c++) {
       for (let r = row - radius; r <= row; r++) {
         if (this.isValid(c, r) && this.cells[c][r].type === 'Sky') {
@@ -192,7 +193,8 @@ export class WorldGrid {
           const dist = Math.sqrt((c - col) ** 2 + (r - row) ** 2);
           if (dist < radius && Math.random() > 0.15) {
             this.cells[c][r].type = 'Food';
-            this.cells[c][r].foodAmount = amount;
+            this.cells[c][r].foodAmount = CONFIG.FOOD_PIECE_SIZE;
+            this.cells[c][r].foodType = foodType;
           }
         }
       }

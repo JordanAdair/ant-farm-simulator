@@ -1,5 +1,5 @@
 import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
-import type { CellType, AntRole } from './types';
+import type { CellType, AntRole, FoodType } from './types';
 import { WorldGrid } from './Grid';
 import { SimulationEngine } from './Engine';
 import { Ant, createDefaultBrain } from './Ant';
@@ -25,7 +25,11 @@ export class OfflineProgression {
         if (cell.type === 'Sky') ch = 'S';
         else if (cell.type === 'Rock') ch = 'R';
         else if (cell.type === 'NestAir') ch = 'A';
-        else if (cell.type === 'Food') ch = 'F';
+        else if (cell.type === 'Food') {
+          ch = 'F'; // Default Apple
+          if (cell.foodType === 'Foliage') ch = 'G';
+          else if (cell.foodType === 'Carcass') ch = 'C';
+        }
         colChars.push(ch);
       }
       chars.push(colChars.join(''));
@@ -41,19 +45,24 @@ export class OfflineProgression {
         const ch = cols[c][r];
         let type: CellType = 'Dirt';
         let foodAmount = 0;
+        let foodType: FoodType | undefined = undefined;
 
         if (ch === 'S') type = 'Sky';
         else if (ch === 'R') type = 'Rock';
         else if (ch === 'A') type = 'NestAir';
-        else if (ch === 'F') {
+        else if (ch === 'F' || ch === 'G' || ch === 'C') {
           type = 'Food';
-          foodAmount = CONFIG.FOOD_PER_SOURCE;
+          foodAmount = CONFIG.FOOD_PIECE_SIZE;
+          if (ch === 'F') foodType = 'Apple';
+          else if (ch === 'G') foodType = 'Foliage';
+          else if (ch === 'C') foodType = 'Carcass';
         }
 
         grid.cells[c][r] = {
           type,
           foodAmount,
           noiseVal: Math.random(),
+          foodType,
         };
       }
     }

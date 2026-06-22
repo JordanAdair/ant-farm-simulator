@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { ColonyManager } from './Colony';
 import { CONFIG } from './types';
+import { Ant } from './Ant';
+import { WorldGrid } from './Grid';
 
 describe('ColonyManager', () => {
   it('should initialize with starting ants under 180 seconds old', () => {
@@ -161,6 +163,81 @@ describe('ColonyManager', () => {
     expect(colony.queen.path!.length).toBeGreaterThan(0);
     // She should also target n2 now
     expect(colony.queen.currentNursery).toEqual(n2);
+  });
+
+  it('should deplete Queen energy and cause starvation death after 21600 frames', () => {
+    const colony = new ColonyManager(200);
+    expect(colony.queen.energy).toBe(100);
+    expect(colony.queen.isDead).toBeFalsy();
+
+    // Starvation takes 21600 frames at 1x speed.
+    // Let's run update with dt = 22000.
+    colony.update(22000);
+
+    expect(colony.queen.energy).toBe(0);
+    expect(colony.queen.isDead).toBe(true);
+  });
+
+  it('should allow Nurse ant to retrieve food cell from larder to feed hungry Queen', () => {
+    const colony = new ColonyManager(200);
+    const grid = new WorldGrid();
+    colony.grid = grid;
+
+    // Set Queen to hungry (< 75)
+    colony.queen.energy = 50;
+
+    // Ensure we have a nurse ant close to Queen and starting larder
+    const queenX = colony.queen.x;
+    const queenY = colony.queen.y;
+    const nurse = new Ant('nurse-1', queenX, queenY, 'Nurse', 1);
+    colony.ants = [nurse];
+
+    // Check starting food larder setup
+    const chambers = colony.getExcavatedChambers(grid);
+    const foodStorages = chambers.foodStorages;
+    expect(foodStorages.length).toBeGreaterThan(0);
+
+    // Grid starts with food (synchronized from fallback = 200)
+    expect(colony.foodStockpile).toBe(200);
+
+    // Call update on the nurse directly in a loop to let her retrieve food and feed the Queen
+    const stockpileRef = { food: colony.foodStockpile };
+    let fed = false;
+
+    // Run nurse updates for up to 300 steps
+    for (let step = 0; step < 300; step++) {
+      nurse.update(
+        grid,
+        {
+          addFoodPheromone: () => {},
+          addHomePheromone: () => {},
+          getFoodPheromone: () => 0,
+          getHomePheromone: () => 0,
+        } as any,
+        stockpileRef,
+        colony.broodList,
+        colony.queen,
+        null,
+        null,
+        chambers.nurseries,
+        foodStorages,
+        colony.broodManager,
+        1,
+        () => {}
+      );
+
+      // Reconcile stockpile value
+      colony.foodStockpile = stockpileRef.food;
+
+      if (colony.queen.energy > 50) {
+        fed = true;
+        break;
+      }
+    }
+
+    expect(fed).toBe(true);
+    expect(colony.queen.energy).toBeCloseTo(75, 2);
+    expect(colony.foodStockpile).toBe(199); // 1 unit of food cell amount was consumed
   });
 });
 
