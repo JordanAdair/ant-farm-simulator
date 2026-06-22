@@ -191,7 +191,7 @@ export class SimulationEngine {
     );
 
     // 3. Update colony entities (Queen, Eggs, Larvae, Pupae)
-    this.colony.update(mult);
+    this.colony.update(mult, this.grid);
 
     // Get current coordinated excavation plan zone
     const activeExcavationStep = this.colony.getActiveExcavationStep(this.grid);
@@ -301,6 +301,7 @@ export class SimulationEngine {
         activeExcavationTarget,
         chambers.nurseries,
         chambers.foodStorages,
+        this.colony.broodManager,
         mult
       );
 

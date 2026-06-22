@@ -6,6 +6,7 @@ import { PheromoneGrid } from './Pheromones';
 import { findPath } from './Pathfinder';
 import { moveAndAvoidObstacles, normalizeAngle } from './Locomotion';
 import type { LocomotionEntity } from './Locomotion';
+import { BroodManager } from './BroodManager';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -111,6 +112,7 @@ export class Ant implements LocomotionEntity {
     activeExcavationTarget: Position | null,
     nurseries: Position[],
     foodStorages: Position[],
+    broodManager: BroodManager,
     speedMultiplier: number
   ) {
     const speed = CONFIG.ANT_SPEED * speedMultiplier;
@@ -148,7 +150,7 @@ export class Ant implements LocomotionEntity {
           this.updateDigger(grid, pheromones, activeExcavationStep, activeExcavationTarget);
           break;
         case 'Nurse':
-          this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages);
+          this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages, broodManager, speedMultiplier);
           break;
       }
     }
@@ -574,7 +576,9 @@ export class Ant implements LocomotionEntity {
     broodList: any[],
     queenPos: Position,
     nurseries: Position[],
-    foodStorages: Position[]
+    foodStorages: Position[],
+    broodManager: BroodManager,
+    speedMultiplier: number
   ) {
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
 
@@ -603,13 +607,13 @@ export class Ant implements LocomotionEntity {
       const brood = broodList.find(b => b.id === this.targetBroodId);
       
       if (brood) {
-        // Select nursery target based on ant ID/number to distribute them across all excavated nurseries
-        const nurseryIndex = Math.abs(this.num) % nurseries.length;
-        const targetNursery = nurseries[nurseryIndex];
+        // Select nursery target based on occupancy
+        const targetNursery = broodManager.getAvailableNursery(nurseries) || nurseries[Math.abs(this.num) % nurseries.length];
         
-        // Add a small individual offset so they don't pile exactly on one pixel
-        const targetX = targetNursery.x + (this.num % 2 === 0 ? 10 : -10) + (this.num % 3) * 5;
-        const targetY = targetNursery.y + 4;
+        const spacedPos = targetNursery ? broodManager.findSpacedPositionInNursery(grid, targetNursery) : null;
+        // Add a small individual offset so they don't pile exactly on one pixel if no spaced position found
+        const targetX = spacedPos ? spacedPos.x : (targetNursery ? targetNursery.x + (this.num % 2 === 0 ? 10 : -10) + (this.num % 3) * 5 : this.x);
+        const targetY = spacedPos ? spacedPos.y : (targetNursery ? targetNursery.y + 4 : this.y);
 
         // Update brood pos to match nurse
         brood.x = this.x;
@@ -689,6 +693,45 @@ export class Ant implements LocomotionEntity {
       this.desiredAngle = this.getAngleTowardsTarget(grid, hungryLarva.x, hungryLarva.y);
       this.desiredPheromone = 'none';
       return;
+    }
+
+    // Idle Nurse Redistribution Check
+    if (this.cargo === 'None' && !this.isHoldingBrood) {
+      let nearNursery: Position | null = null;
+      for (const nursery of nurseries) {
+        const dist = Math.sqrt((this.x - nursery.x) ** 2 + (this.y - nursery.y) ** 2);
+        if (dist < 40) {
+          nearNursery = nursery;
+          break;
+        }
+      }
+
+      if (nearNursery && broodManager.isNurseryCrowded(nearNursery)) {
+        const bestAlt = broodManager.getAvailableNursery(nurseries);
+        if (bestAlt && (bestAlt.x !== nearNursery.x || bestAlt.y !== nearNursery.y)) {
+          const currOccupancy = broodManager.getNurseryOccupancy(nearNursery);
+          const altOccupancy = broodManager.getNurseryOccupancy(bestAlt);
+          
+          if (currOccupancy - altOccupancy >= 3 && Math.random() < 0.20 * speedMultiplier) {
+            const itemsInNursery = broodList.filter(b => {
+              if (b.beingCarried) return false;
+              const dx = b.x - nearNursery!.x;
+              const dy = b.y - nearNursery!.y;
+              return Math.sqrt(dx * dx + dy * dy) < 40;
+            });
+
+            if (itemsInNursery.length > 0) {
+              const targetItem = itemsInNursery[Math.floor(Math.random() * itemsInNursery.length)];
+              targetItem.beingCarried = true;
+              this.isHoldingBrood = true;
+              this.targetBroodId = targetItem.id;
+              this.collisionCooldown = 0;
+              this.state = 'Nursing';
+              return;
+            }
+          }
+        }
+      }
     }
 
     // State check: pick up misplaced eggs / pupae and take them to nursery (ALWAYS run this check)

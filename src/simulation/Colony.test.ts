@@ -112,4 +112,55 @@ describe('ColonyManager', () => {
     const foragersCount = colony.ants.filter(a => a.role === 'Forager').length;
     expect(foragersCount).toBeLessThan(8);
   });
+
+  it('should relocate the Queen when her current nursery is full', () => {
+    const colony = new ColonyManager(200);
+    const grid = {
+      isValid: () => true,
+      isWalkable: () => true,
+      getNestVolume: () => 100,
+      cols: CONFIG.COLS,
+      rows: CONFIG.ROWS,
+    } as any;
+
+    const n1 = { x: 100, y: 100 };
+    const n2 = { x: 200, y: 100 };
+    
+    // Override getExcavatedChambers to return two mock nurseries
+    colony.getExcavatedChambers = () => ({
+      nurseries: [n1, n2],
+      foodStorages: []
+    });
+
+    colony.queen.currentNursery = n1;
+    colony.queen.x = n1.x;
+    colony.queen.y = n1.y;
+
+    // Fill current nursery (n1) with 15 eggs
+    for (let i = 0; i < 15; i++) {
+      colony.broodList.push({
+        id: `egg-${i}`,
+        type: 'Egg',
+        x: n1.x,
+        y: n1.y,
+        progress: 0,
+        needsFood: false,
+        beingCarried: false,
+      });
+    }
+
+    // Force queen.eggTimer to 0 and ensure enough food to lay egg
+    colony.queen.eggTimer = 0;
+    colony.foodStockpile = 20;
+
+    // Call update to trigger layEgg -> relocation check
+    colony.update(1, grid);
+
+    // Expect the Queen to have calculated a path to relocate
+    expect(colony.queen.path).toBeDefined();
+    expect(colony.queen.path!.length).toBeGreaterThan(0);
+    // She should also target n2 now
+    expect(colony.queen.currentNursery).toEqual(n2);
+  });
 });
+
