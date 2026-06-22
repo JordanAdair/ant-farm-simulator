@@ -3,16 +3,29 @@ import type { Brood, AntRole, ExcavationStep, Position, AntBrain, LogEntry } fro
 import { Ant, createDefaultBrain } from './Ant';
 import { WorldGrid } from './Grid';
 import { generateProceduralNestPlan, isCellInsidePlanStep } from './NestPlanner';
+import { BroodManager } from './BroodManager';
+import { findPath } from './Pathfinder';
 
 export class ColonyManager {
   public foodStockpile: number = 200; // starts with a little food
   public ants: Ant[] = [];
   public broodList: Brood[] = [];
-  public queen: { x: number; y: number; energy: number; eggTimer: number; direction: number; targetX: number; restTimer?: number };
+  public queen: {
+    x: number;
+    y: number;
+    energy: number;
+    eggTimer: number;
+    direction: number;
+    targetX: number;
+    restTimer?: number;
+    currentNursery?: Position;
+    path?: Position[];
+  };
   public logs: LogEntry[] = [];
   public nextAntNum: number = 1; // counter for numbering ants
   public excavationPlan: ExcavationStep[] = [];
   public lastActiveStepName: string | null = null;
+  public broodManager: BroodManager;
 
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
@@ -26,10 +39,15 @@ export class ColonyManager {
       direction: 1, // 1 for right, -1 for left
       targetX: startX,
       restTimer: 0,
+      currentNursery: { x: startX - 40, y: startY + 4 },
+      path: [],
     };
 
     // Generate procedural nest plan
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
+
+    this.broodManager = new BroodManager();
+    this.broodManager.broodList = this.broodList; // keep reference synced
 
     // Spawn initial workers
     this.spawnInitialColony(startX, startY);
@@ -69,7 +87,8 @@ export class ColonyManager {
     }
   }
 
-  public update(speedMultiplier: number) {
+  public update(speedMultiplier: number, grid?: WorldGrid) {
+    const activeGrid = grid || new WorldGrid();
     const dt = 1 * speedMultiplier;
 
     // 1. Queen egg laying and energy
@@ -77,9 +96,34 @@ export class ColonyManager {
     this.queen.eggTimer -= (1 / 60) * dt;
     if (this.queen.eggTimer <= 0) {
       if (this.foodStockpile >= 10) {
-        this.foodStockpile -= 10;
-        this.layEgg();
-        this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
+        const chambers = this.getExcavatedChambers(activeGrid);
+        const currentNursery = this.queen.currentNursery || chambers.nurseries[0];
+
+        if (currentNursery && this.broodManager.isNurseryFull(currentNursery)) {
+          // Find another nursery that is NOT full
+          const nextNursery = this.broodManager.getAvailableNursery(chambers.nurseries);
+          if (nextNursery && (nextNursery.x !== currentNursery.x || nextNursery.y !== currentNursery.y)) {
+            // Initiate pathfinding to relocation
+            const startCol = Math.floor(this.queen.x / CONFIG.CELL_SIZE);
+            const startRow = Math.floor(this.queen.y / CONFIG.CELL_SIZE);
+            const targetCol = Math.floor(nextNursery.x / CONFIG.CELL_SIZE);
+            const targetRow = Math.floor(nextNursery.y / CONFIG.CELL_SIZE);
+            const newPath = findPath(activeGrid, startCol, startRow, targetCol, targetRow);
+            if (newPath) {
+              this.queen.path = newPath;
+              this.queen.currentNursery = nextNursery;
+              this.addLog('Nursery is full. The Queen is relocating to a new chamber.', 'system');
+              this.queen.eggTimer = 0;
+            }
+          }
+        }
+
+        // Only lay egg if not currently relocating
+        if (!this.queen.path || this.queen.path.length === 0) {
+          this.foodStockpile -= 10;
+          this.broodManager.layEgg(activeGrid, this.queen, chambers.nurseries, (msg, cat) => this.addLog(msg, cat));
+          this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
+        }
       } else {
         // Keep the egg timer at 0 so she lays immediately when food becomes available
         this.queen.eggTimer = 0;
@@ -92,115 +136,82 @@ export class ColonyManager {
       this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
     }
 
-    // Queen pacing motion inside the central chamber
-    if (this.queen.restTimer === undefined) {
-      this.queen.restTimer = 0;
-    }
-
-    const entranceX = (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
-    const minX = entranceX - 16;
-    const maxX = entranceX + 16;
-
-    if (this.queen.restTimer > 0) {
-      this.queen.restTimer -= dt;
+    // Queen motion
+    if (this.queen.path && this.queen.path.length > 0) {
+      const target = this.queen.path[0];
+      const dx = target.x - this.queen.x;
+      const dy = target.y - this.queen.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const queenSpeed = 0.5 * speedMultiplier; // Queen moves regally and steadily
+      if (dist <= queenSpeed) {
+        this.queen.x = target.x;
+        this.queen.y = target.y;
+        this.queen.path.shift();
+      } else {
+        this.queen.x += (dx / dist) * queenSpeed;
+        this.queen.y += (dy / dist) * queenSpeed;
+      }
     } else {
-      const speed = 0.12 * speedMultiplier; // Queen moves regally and slowly
-
-      if (this.queen.targetX === undefined) {
-        this.queen.targetX = this.queen.x;
-      }
-      if (this.queen.direction === undefined) {
-        this.queen.direction = 1;
+      // Queen pacing motion inside the current nursery chamber
+      if (this.queen.restTimer === undefined) {
+        this.queen.restTimer = 0;
       }
 
-      // Move towards target
-      this.queen.x += this.queen.direction * speed;
-
-      // Check if crossed or close to target
-      const crossedTarget = this.queen.direction === 1
-        ? this.queen.x >= this.queen.targetX
-        : this.queen.x <= this.queen.targetX;
-
-      if (crossedTarget || Math.abs(this.queen.x - this.queen.targetX) < 2) {
-        // Reached target, rest for 5-10 seconds (300 to 600 frames)
-        this.queen.restTimer = 300 + Math.random() * 300;
-        this.queen.targetX = minX + Math.random() * (maxX - minX);
-        this.queen.direction = this.queen.targetX > this.queen.x ? 1 : -1;
+      if (this.queen.currentNursery) {
+        this.queen.y = this.queen.currentNursery.y;
       }
 
-      // Hard boundary clamping to prevent runaway under high speed multipliers
-      if (this.queen.x < minX) {
-        this.queen.x = minX;
-        this.queen.targetX = minX + Math.random() * (maxX - minX);
-        this.queen.direction = 1;
-        this.queen.restTimer = 300 + Math.random() * 300;
-      } else if (this.queen.x > maxX) {
-        this.queen.x = maxX;
-        this.queen.targetX = minX + Math.random() * (maxX - minX);
-        this.queen.direction = -1;
-        this.queen.restTimer = 300 + Math.random() * 300;
+      const pacingCenter = this.queen.currentNursery ? this.queen.currentNursery.x : (CONFIG.COLS / 2) * CONFIG.CELL_SIZE;
+      const minX = pacingCenter - 16;
+      const maxX = pacingCenter + 16;
+
+      if (this.queen.restTimer > 0) {
+        this.queen.restTimer -= dt;
+      } else {
+        const speed = 0.12 * speedMultiplier; // Queen moves regally and slowly
+
+        if (this.queen.targetX === undefined) {
+          this.queen.targetX = this.queen.x;
+        }
+        if (this.queen.direction === undefined) {
+          this.queen.direction = 1;
+        }
+
+        // Move towards target
+        this.queen.x += this.queen.direction * speed;
+
+        // Check if crossed or close to target
+        const crossedTarget = this.queen.direction === 1
+          ? this.queen.x >= this.queen.targetX
+          : this.queen.x <= this.queen.targetX;
+
+        if (crossedTarget || Math.abs(this.queen.x - this.queen.targetX) < 2) {
+          // Reached target, rest for 5-10 seconds (300 to 600 frames)
+          this.queen.restTimer = 300 + Math.random() * 300;
+          this.queen.targetX = minX + Math.random() * (maxX - minX);
+          this.queen.direction = this.queen.targetX > this.queen.x ? 1 : -1;
+        }
+
+        // Hard boundary clamping to prevent runaway under high speed multipliers
+        if (this.queen.x < minX) {
+          this.queen.x = minX;
+          this.queen.targetX = minX + Math.random() * (maxX - minX);
+          this.queen.direction = 1;
+          this.queen.restTimer = 300 + Math.random() * 300;
+        } else if (this.queen.x > maxX) {
+          this.queen.x = maxX;
+          this.queen.targetX = minX + Math.random() * (maxX - minX);
+          this.queen.direction = -1;
+          this.queen.restTimer = 300 + Math.random() * 300;
+        }
       }
     }
 
     // 2. Brood lifecycle updates
-    for (let i = this.broodList.length - 1; i >= 0; i--) {
-      const brood = this.broodList[i];
-      
-      if (brood.type === 'Egg') {
-        brood.progress += (100 / CONFIG.EGG_HATCH_TIME / 60) * dt;
-        if (brood.progress >= 100) {
-          brood.type = 'Larva';
-          brood.progress = 0;
-          brood.needsFood = true;
-          this.addLog('An egg hatched into a hungry larva.', 'births');
-        }
-      } else if (brood.type === 'Larva') {
-        // Larva needs food to grow. If it doesn't get food, it stays hungry and stops growing
-        if (!brood.needsFood) {
-          brood.progress += (100 / CONFIG.LARVA_GROWTH_TIME / 60) * dt;
-          if (brood.progress >= 100) {
-            brood.type = 'Pupa';
-            brood.progress = 0;
-            this.addLog('A larva spun a silk cocoon and entered pupation.', 'births');
-          }
-          // Set hungry again after some time
-          if (Math.random() < 0.002 * dt) {
-            brood.needsFood = true;
-          }
-        }
-      } else if (brood.type === 'Pupa') {
-        brood.progress += (100 / CONFIG.PUPA_HATCH_TIME / 60) * dt;
-        if (brood.progress >= 100) {
-          // Hatch into a new ant!
-          this.hatchAnt(brood.x, brood.y);
-          this.broodList.splice(i, 1); // remove pupa
-          continue;
-        }
-      }
-    }
+    this.broodManager.update(dt, (x, y) => this.hatchAnt(x, y), (msg, cat) => this.addLog(msg, cat));
 
     // 3. Dynamic role balancing for ants
     this.balanceAntRoles();
-  }
-
-  private layEgg() {
-    // Lay egg next to Queen
-    const rx = this.queen.x + (Math.random() - 0.5) * 30;
-    const ry = this.queen.y + 10;
-    
-    const id = `brood-${Math.random().toString(36).substr(2, 9)}`;
-    const newEgg: Brood = {
-      id,
-      type: 'Egg',
-      x: rx,
-      y: ry,
-      progress: 0,
-      needsFood: false,
-      beingCarried: false,
-    };
-    
-    this.broodList.push(newEgg);
-    this.addLog('The Queen laid a new egg.', 'births');
   }
 
   private getParentBrain(): { brain: AntBrain; generation: number } | null {
@@ -423,6 +434,8 @@ export class ColonyManager {
     this.foodStockpile = 200;
     this.ants = [];
     this.broodList = [];
+    this.broodManager = new BroodManager();
+    this.broodManager.broodList = this.broodList;
     this.nextAntNum = 1;
     
     const startX = entranceCol * CONFIG.CELL_SIZE;
@@ -436,6 +449,8 @@ export class ColonyManager {
       direction: 1,
       targetX: startX,
       restTimer: 0,
+      currentNursery: { x: startX - 40, y: startY + 4 },
+      path: [],
     };
     
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
