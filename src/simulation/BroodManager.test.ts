@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BroodManager } from './BroodManager';
-import { Position } from './types';
+import type { Position } from './types';
 
 describe('BroodManager Lifecycle', () => {
   it('should progress egg to larva', () => {
@@ -114,8 +114,8 @@ describe('BroodManager Lifecycle', () => {
   it('should find a walkable position that is at least 8px away from other brood', () => {
     const bm = new BroodManager();
     const mockGrid = {
-      isValid: (c: number, r: number) => true,
-      isWalkable: (c: number, r: number) => true,
+      isValid: () => true,
+      isWalkable: () => true,
     } as any;
 
     const nursery: Position = { x: 100, y: 100 };
@@ -143,8 +143,8 @@ describe('BroodManager Lifecycle', () => {
   it('should lay egg at a spaced position in the closest nursery if available', () => {
     const bm = new BroodManager();
     const mockGrid = {
-      isValid: (c: number, r: number) => true,
-      isWalkable: (c: number, r: number) => true,
+      isValid: () => true,
+      isWalkable: () => true,
     } as any;
 
     const n1: Position = { x: 100, y: 100 };

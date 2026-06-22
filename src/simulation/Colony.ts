@@ -9,7 +9,16 @@ import { findPath } from './Pathfinder';
 export class ColonyManager {
   public foodStockpile: number = 200; // starts with a little food
   public ants: Ant[] = [];
-  public broodList: Brood[] = [];
+  private _broodList: Brood[] = [];
+  public get broodList(): Brood[] {
+    return this._broodList;
+  }
+  public set broodList(val: Brood[]) {
+    this._broodList = val;
+    if (this.broodManager) {
+      this.broodManager.broodList = val;
+    }
+  }
   public queen: {
     x: number;
     y: number;
