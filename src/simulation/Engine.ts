@@ -1,5 +1,5 @@
 import { CONFIG } from './types';
-import type { Position, Brood } from './types';
+import type { Brood } from './types';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { ColonyManager } from './Colony';
@@ -65,6 +65,21 @@ export class SimulationEngine {
   
   // Storage callback
   public onStateSaveNeeded: () => void = () => {};
+
+  public debrisParticles: { x: number; y: number; vx: number; vy: number; color: string; life: number }[] = [];
+
+  public spawnDebris(x: number, y: number, color: string, count: number = 4) {
+    for (let i = 0; i < count; i++) {
+      this.debrisParticles.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: -Math.random() * 1.2 - 0.5,
+        color,
+        life: 1.0
+      });
+    }
+  }
 
   public refillWeatherQueue() {
     this.environment.refillWeatherQueue();
@@ -209,7 +224,7 @@ export class SimulationEngine {
     const chambers = this.colony.getExcavatedChambers(this.grid);
 
     // 4. Update individual ants (and handle lifecycle / aging)
-    const queenPos: Position = { x: this.colony.queen.x, y: this.colony.queen.y };
+    const queenPos = this.colony.queen;
     const stockpileRef = { food: this.colony.foodStockpile };
     
     // Pass references to allow state modification
@@ -305,12 +320,25 @@ export class SimulationEngine {
         chambers.nurseries,
         chambers.foodStorages,
         this.colony.broodManager,
-        mult
+        mult,
+        (x, y, color) => this.spawnDebris(x, y, color)
       );
 
       // Track global statistics for dug dirt
       if (prevCargo === 'None' && ant.cargo === 'Dirt') {
         this.totalDirtDugGlobal++;
+      }
+    }
+
+    // Update debris particles
+    for (let i = this.debrisParticles.length - 1; i >= 0; i--) {
+      const p = this.debrisParticles[i];
+      p.x += p.vx * mult;
+      p.y += p.vy * mult;
+      p.vy += 0.1 * mult; // gravity
+      p.life -= 0.05 * mult; // fade out
+      if (p.life <= 0) {
+        this.debrisParticles.splice(i, 1);
       }
     }
 
@@ -503,41 +531,19 @@ export class SimulationEngine {
             ctx.restore();
           }
         } else if (cell.type === 'Food') {
-          // Skip rendering individual food cells; they are drawn as clustered apples
-          continue;
+          ctx.save();
+          let foodColor = 'hsl(0, 80%, 48%)'; // Apple: red
+          if (cell.foodType === 'Foliage') {
+            foodColor = 'hsl(102, 55%, 35%)';
+          } else if (cell.foodType === 'Carcass') {
+            foodColor = 'hsl(280, 60%, 40%)';
+          }
+          ctx.fillStyle = foodColor;
+          ctx.fillRect(x + 0.5, y + 0.5, CONFIG.CELL_SIZE - 1, CONFIG.CELL_SIZE - 1);
+          ctx.restore();
         }
       }
     }
-
-    // Draw fallen apples on the ground
-    const fallenApples = this.getFallenApples();
-    fallenApples.forEach(apple => {
-      // Draw stem
-      ctx.strokeStyle = 'hsl(28, 30%, 12%)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(apple.x, apple.y - apple.radius);
-      ctx.quadraticCurveTo(apple.x - 3, apple.y - apple.radius - 6, apple.x - 5, apple.y - apple.radius - 7);
-      ctx.stroke();
-
-      // Draw leaf
-      ctx.fillStyle = 'hsl(102, 50%, 35%)';
-      ctx.beginPath();
-      ctx.ellipse(apple.x - 5, apple.y - apple.radius - 7, 4.0, 2.0, -Math.PI / 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw red apple body
-      ctx.fillStyle = 'hsl(0, 85%, 45%)';
-      ctx.beginPath();
-      ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Draw a tiny shine dot on the apple
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.beginPath();
-      ctx.arc(apple.x - apple.radius * 0.3, apple.y - apple.radius * 0.3, apple.radius * 0.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
 
     // Draw chamber purpose text labels and visible food piles
     const chambersDraw = this.colony.getExcavatedChambers(this.grid);
@@ -692,6 +698,17 @@ export class SimulationEngine {
     // Draw rain particles and splashes in world viewport coordinates
     this.environment.renderRain(ctx);
 
+    // Draw debris particles
+    if (this.debrisParticles.length > 0) {
+      ctx.save();
+      this.debrisParticles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+        ctx.fillRect(p.x - 0.7, p.y - 0.7, 1.4, 1.4);
+      });
+      ctx.restore();
+    }
+
     // 8. Draw Ant Labels (independent of Diagnostics Grid)
     if (this.showAntNames) {
       this.drawAntNames(ctx);
@@ -780,7 +797,13 @@ export class SimulationEngine {
 
     // C. Draw Cargo
     if (ant.cargo === 'Food') {
-      ctx.fillStyle = 'hsl(0, 80%, 48%)'; // red apple chunk
+      let cargoColor = 'hsl(0, 80%, 48%)'; // red apple chunk
+      if (ant.cargoFoodType === 'Foliage') {
+        cargoColor = 'hsl(102, 55%, 35%)';
+      } else if (ant.cargoFoodType === 'Carcass') {
+        cargoColor = 'hsl(280, 60%, 40%)';
+      }
+      ctx.fillStyle = cargoColor;
       ctx.beginPath();
       ctx.arc(2.8, 0, 1.5, 0, Math.PI * 2);
       ctx.fill();
@@ -1164,61 +1187,6 @@ export class SimulationEngine {
 
   public initializeFoliage() {
     this.foliageSystem.initialize(this.grid);
-  }
-
-  private getFallenApples(): { x: number; y: number; radius: number }[] {
-    const visited = new Set<string>();
-    const apples: { x: number; y: number; radius: number }[] = [];
-
-    for (let c = 0; c < CONFIG.COLS; c++) {
-      for (let r = 0; r < CONFIG.ROWS; r++) {
-        const cell = this.grid.cells[c][r];
-        if (cell.type === 'Food' && !visited.has(`${c},${r}`)) {
-          let sumC = 0;
-          let sumR = 0;
-          let count = 0;
-          const queue: [number, number][] = [[c, r]];
-          visited.add(`${c},${r}`);
-
-          while (queue.length > 0) {
-            const [currC, currR] = queue.shift()!;
-            sumC += currC;
-            sumR += currR;
-            count++;
-
-            const neighbors = [
-              [currC - 1, currR],
-              [currC + 1, currR],
-              [currC, currR - 1],
-              [currC, currR + 1]
-            ];
-            for (const [nc, nr] of neighbors) {
-              if (this.grid.isValid(nc, nr) && this.grid.cells[nc][nr].type === 'Food') {
-                const key = `${nc},${nr}`;
-                if (!visited.has(key)) {
-                  visited.add(key);
-                  queue.push([nc, nr]);
-                }
-              }
-            }
-          }
-
-          const avgC = sumC / count;
-          const radius = Math.min(12, 3 + Math.sqrt(count) * 2.2);
-
-          // Find the actual ground height at the average column index
-          const colIndex = Math.max(0, Math.min(CONFIG.COLS - 1, Math.round(avgC)));
-          const groundY = this.grid.getSurfaceRow(colIndex) * CONFIG.CELL_SIZE;
-
-          apples.push({
-            x: avgC * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2,
-            y: groundY - radius,
-            radius
-          });
-        }
-      }
-    }
-    return apples;
   }
 
   public triggerFruitDrop() {

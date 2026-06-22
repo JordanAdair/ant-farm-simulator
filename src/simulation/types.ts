@@ -1,5 +1,7 @@
 export type CellType = 'Sky' | 'Dirt' | 'Rock' | 'NestAir' | 'Food';
 
+export type FoodType = 'Apple' | 'Foliage' | 'Carcass';
+
 export type AntRole = 'Forager' | 'Digger' | 'Nurse';
 
 export type AntState =
@@ -120,6 +122,14 @@ export interface ExcavationStep {
   baselineRow?: number;
 }
 
+export interface LarderBox {
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
+  centerX: number;
+  centerY: number;
+}
 
 export const EXCAVATION_PLAN: ExcavationStep[] = [
   // Tier 1

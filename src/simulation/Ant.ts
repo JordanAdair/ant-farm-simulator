@@ -1,5 +1,5 @@
-import { CONFIG } from './types';
-import type { AntRole, AntState, Position, ExcavationStep, AntBrain } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
+import type { AntRole, AntState, Position, ExcavationStep, AntBrain, FoodType } from './types';
 import { isCellInsidePlanStep } from './NestPlanner';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
@@ -30,6 +30,7 @@ export class Ant implements LocomotionEntity {
   public state: AntState;
   
   public cargo: 'None' | 'Food' | 'Dirt' = 'None';
+  public cargoFoodType?: FoodType;
   public energy: number = CONFIG.ANT_MAX_ENERGY;
   public homeChamberX: number;
   public homeChamberY: number;
@@ -113,7 +114,8 @@ export class Ant implements LocomotionEntity {
     nurseries: Position[],
     foodStorages: Position[],
     broodManager: BroodManager,
-    speedMultiplier: number
+    speedMultiplier: number,
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
     const speed = CONFIG.ANT_SPEED * speedMultiplier;
     this.legCycle += 0.25 * speedMultiplier;
@@ -140,17 +142,17 @@ export class Ant implements LocomotionEntity {
 
     // Role state machines
     if (this.state === 'Resting') {
-      this.updateResting(grid, stockpile, foodStorages);
+      this.updateResting(grid, stockpile, foodStorages, spawnDebris);
     } else {
       switch (this.role) {
         case 'Forager':
-          this.updateForager(grid, pheromones, stockpile, foodStorages);
+          this.updateForager(grid, pheromones, stockpile, foodStorages, spawnDebris);
           break;
         case 'Digger':
           this.updateDigger(grid, pheromones, activeExcavationStep, activeExcavationTarget);
           break;
         case 'Nurse':
-          this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages, broodManager, speedMultiplier);
+          this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages, broodManager, speedMultiplier, spawnDebris);
           break;
       }
     }
@@ -189,7 +191,8 @@ export class Ant implements LocomotionEntity {
   private updateResting(
     grid: WorldGrid,
     stockpile: { food: number },
-    foodStorages: Position[]
+    foodStorages: Position[],
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
     const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
@@ -210,12 +213,47 @@ export class Ant implements LocomotionEntity {
     if (minDist < 30) {
       if (stockpile.food >= 0.5) {
         stockpile.food -= 0.5;
+
+        // Spawn eating animation/debris at the nearest food cell inside this larder
+        if (spawnDebris) {
+          const cellCol = Math.floor(this.x / CONFIG.CELL_SIZE);
+          const cellRow = Math.floor(this.y / CONFIG.CELL_SIZE);
+          let closestFoodCell: Position | null = null;
+          let minFoodDist = Infinity;
+          for (let dc = -8; dc <= 8; dc++) {
+            for (let dr = -8; dr <= 8; dr++) {
+              const tc = cellCol + dc;
+              const tr = cellRow + dr;
+              const cell = grid.getCell(tc, tr);
+              if (cell && cell.type === 'Food') {
+                const fx = tc * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2;
+                const fy = tr * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2;
+                const dSq = (this.x - fx) ** 2 + (this.y - fy) ** 2;
+                if (dSq < minFoodDist) {
+                  minFoodDist = dSq;
+                  closestFoodCell = { x: fx, y: fy };
+                }
+              }
+            }
+          }
+          if (closestFoodCell) {
+            const cCol = Math.floor(closestFoodCell.x / CONFIG.CELL_SIZE);
+            const cRow = Math.floor(closestFoodCell.y / CONFIG.CELL_SIZE);
+            const cell = grid.getCell(cCol, cRow);
+            let color = 'hsl(0, 80%, 48%)';
+            if (cell?.foodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
+            else if (cell?.foodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
+            
+            spawnDebris(closestFoodCell.x, closestFoodCell.y, color, 3);
+          }
+        }
+
+        this.energy = CONFIG.ANT_MAX_ENERGY;
+        this.state = this.role === 'Forager' ? 'SearchingForFood' : (this.role === 'Nurse' ? 'Wandering' : 'DiggingTunnel');
+        this.angle += Math.PI; // turn around
+        this.collisionCooldown = 0;
+        return;
       }
-      this.energy = CONFIG.ANT_MAX_ENERGY;
-      this.state = this.role === 'Forager' ? 'SearchingForFood' : (this.role === 'Nurse' ? 'Wandering' : 'DiggingTunnel');
-      this.angle += Math.PI; // turn around
-      this.collisionCooldown = 0;
-      return;
     }
 
     // Go back to the nest
@@ -235,7 +273,8 @@ export class Ant implements LocomotionEntity {
     grid: WorldGrid,
     pheromones: PheromoneGrid,
     stockpile: { food: number },
-    foodStorages: Position[]
+    foodStorages: Position[],
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
     const col = Math.floor(this.x / CONFIG.CELL_SIZE);
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
@@ -259,9 +298,17 @@ export class Ant implements LocomotionEntity {
         if (grid.isValid(tc, tr)) {
           const cell = grid.getCell(tc, tr);
           if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
+            this.cargoFoodType = cell.foodType || 'Apple';
             cell.foodAmount = Math.max(0, cell.foodAmount - CONFIG.FOOD_PIECE_SIZE);
             if (cell.foodAmount <= 0) {
               grid.setCellType(tc, tr, 'Sky');
+              grid.cells[tc][tr].foodType = undefined;
+            }
+            if (spawnDebris) {
+              let color = 'hsl(0, 80%, 48%)';
+              if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
+              else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
+              spawnDebris(tc * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, tr * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 4);
             }
             this.cargo = 'Food';
             this.state = 'ReturningToNest';
@@ -329,26 +376,61 @@ export class Ant implements LocomotionEntity {
       pheromones.addFoodPheromone(col, row, CONFIG.PHEROMONE_LAY_STRENGTH);
 
       // State check: if close to any excavated food storage chamber, deposit food (ALWAYS run this check)
-      let closeToStorage = false;
-      let minDist = Infinity;
+
+      let closestStorage = foodStorages[0];
+      let minDistVal = Infinity;
       for (const storage of foodStorages) {
         const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-        if (dist < minDist) {
-          minDist = dist;
+        if (dist < minDistVal) {
+          minDistVal = dist;
+          closestStorage = storage;
         }
       }
-      if (minDist < 30) {
-        closeToStorage = true;
-      }
 
-      if (closeToStorage) {
-        stockpile.food += CONFIG.FOOD_PIECE_SIZE;
-        this.cargo = 'None';
-        this.state = 'SearchingForFood';
-        this.angle += Math.PI;
-        this.collisionCooldown = 0; // reset cooldown to navigate out
-        this.deliveries++;
-        return;
+      if (minDistVal < 30) {
+        // Physical deposit into closestStorage
+        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
+        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
+        const entranceCol = grid.nestEntranceCol;
+        const centerRow = STARTING_CHAMBER_CENTER_ROW;
+        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
+        
+        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
+        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
+        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
+        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
+
+        let deposited = false;
+        for (let c = minCol; c <= maxCol; c++) {
+          for (let r = minRow; r <= maxRow; r++) {
+            if (grid.isValid(c, r) && grid.getCell(c, r)?.type === 'NestAir') {
+              grid.cells[c][r].type = 'Food';
+              grid.cells[c][r].foodType = this.cargoFoodType || 'Apple';
+              grid.cells[c][r].foodAmount = CONFIG.FOOD_PIECE_SIZE;
+              
+              if (spawnDebris) {
+                let color = 'hsl(0, 80%, 48%)';
+                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
+                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
+                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 4);
+              }
+              deposited = true;
+              break;
+            }
+          }
+          if (deposited) break;
+        }
+
+        if (deposited) {
+          stockpile.food += CONFIG.FOOD_PIECE_SIZE;
+          this.cargo = 'None';
+          this.cargoFoodType = undefined;
+          this.state = 'SearchingForFood';
+          this.angle += Math.PI;
+          this.collisionCooldown = 0; // reset cooldown to navigate out
+          this.deliveries++;
+          return;
+        }
       }
 
       const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
@@ -359,17 +441,13 @@ export class Ant implements LocomotionEntity {
         this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
         this.desiredPheromone = 'none';
       } else {
-        // Underground: steer towards the closest food storage chamber and follow home pheromone
-        let closestStorage = foodStorages[0];
-        let minDist = Infinity;
-        for (const storage of foodStorages) {
-          const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-          if (dist < minDist) {
-            minDist = dist;
-            closestStorage = storage;
-          }
+        // Underground: steer towards the closest non-full food storage chamber
+        const availableStorage = this.getAvailableStorage(grid, foodStorages);
+        if (availableStorage) {
+          this.desiredAngle = this.getAngleTowardsTarget(grid, availableStorage.x, availableStorage.y);
+        } else {
+          this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
         }
-        this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
         this.desiredPheromone = 'home';
       }
     }
@@ -574,11 +652,12 @@ export class Ant implements LocomotionEntity {
     grid: WorldGrid,
     stockpile: { food: number },
     broodList: any[],
-    queenPos: Position,
+    queenPos: Position & { energy?: number },
     nurseries: Position[],
     foodStorages: Position[],
     broodManager: BroodManager,
-    speedMultiplier: number
+    speedMultiplier: number,
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
 
@@ -642,6 +721,96 @@ export class Ant implements LocomotionEntity {
       return;
     }
 
+    // State check: Queen hunger has top priority
+    const isQueenHungry = queenPos.energy !== undefined && queenPos.energy < 75;
+
+    if (isQueenHungry && this.cargo === 'None' && !this.isHoldingBrood) {
+      this.state = 'Nursing';
+      
+      let closestStorage = foodStorages[0];
+      let minDist = Infinity;
+      for (const storage of foodStorages) {
+        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
+        if (dist < minDist) {
+          minDist = dist;
+          closestStorage = storage;
+        }
+      }
+
+      if (minDist < 20) {
+        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
+        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
+        const entranceCol = grid.nestEntranceCol;
+        const centerRow = STARTING_CHAMBER_CENTER_ROW;
+        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
+        
+        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
+        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
+        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
+        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
+
+        let foundCell = false;
+        for (let c = minCol; c <= maxCol; c++) {
+          for (let r = minRow; r <= maxRow; r++) {
+            const cell = grid.getCell(c, r);
+            if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
+              this.cargoFoodType = cell.foodType || 'Apple';
+              cell.foodAmount -= 1;
+              stockpile.food -= 1;
+              if (cell.foodAmount <= 0) {
+                cell.type = 'NestAir';
+                cell.foodType = undefined;
+              }
+              
+              if (spawnDebris) {
+                let color = 'hsl(0, 80%, 48%)';
+                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
+                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
+                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, color, 3);
+              }
+
+              this.cargo = 'Food';
+              this.collisionCooldown = 0;
+              foundCell = true;
+              break;
+            }
+          }
+          if (foundCell) break;
+        }
+        if (foundCell) return;
+      }
+
+      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
+      this.desiredPheromone = 'none';
+      return;
+    }
+
+    if (this.cargo === 'Food' && isQueenHungry) {
+      this.state = 'Nursing';
+      const dx = queenPos.x - this.x;
+      const dy = queenPos.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < 12) {
+        if (queenPos.energy !== undefined) {
+          queenPos.energy = Math.min(100, queenPos.energy + 25);
+        }
+        this.cargo = 'None';
+        this.cargoFoodType = undefined;
+        this.collisionCooldown = 0;
+        this.deliveries++;
+        
+        if (spawnDebris) {
+          spawnDebris(queenPos.x, queenPos.y, 'hsl(0, 80%, 48%)', 4);
+        }
+        return;
+      }
+
+      this.desiredAngle = this.getAngleTowardsTarget(grid, queenPos.x, queenPos.y);
+      this.desiredPheromone = 'none';
+      return;
+    }
+
     // State check: if hungry larva exists and nurse has no cargo, go get food (ALWAYS run this check)
     const hungryLarva = broodList.find(b => b.type === 'Larva' && b.needsFood && !b.beingCarried);
     
@@ -661,12 +830,46 @@ export class Ant implements LocomotionEntity {
 
       // Go to food storage to get food
       if (minDist < 20) {
-        if (stockpile.food >= 1) {
-          stockpile.food -= 1;
-          this.cargo = 'Food';
-          this.collisionCooldown = 0;
-          return;
+        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
+        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
+        const entranceCol = grid.nestEntranceCol;
+        const centerRow = STARTING_CHAMBER_CENTER_ROW;
+        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
+        
+        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
+        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
+        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
+        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
+
+        let foundCell = false;
+        for (let c = minCol; c <= maxCol; c++) {
+          for (let r = minRow; r <= maxRow; r++) {
+            const cell = grid.getCell(c, r);
+            if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
+              this.cargoFoodType = cell.foodType || 'Apple';
+              cell.foodAmount -= 1;
+              stockpile.food -= 1;
+              if (cell.foodAmount <= 0) {
+                cell.type = 'NestAir';
+                cell.foodType = undefined;
+              }
+              
+              if (spawnDebris) {
+                let color = 'hsl(0, 80%, 48%)';
+                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
+                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
+                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, color, 3);
+              }
+
+              this.cargo = 'Food';
+              this.collisionCooldown = 0;
+              foundCell = true;
+              break;
+            }
+          }
+          if (foundCell) break;
         }
+        if (foundCell) return;
       }
 
       this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
@@ -685,8 +888,13 @@ export class Ant implements LocomotionEntity {
         hungryLarva.progress = Math.min(100, hungryLarva.progress + 25);
         hungryLarva.needsFood = false;
         this.cargo = 'None';
+        this.cargoFoodType = undefined;
         this.collisionCooldown = 0;
         this.deliveries++;
+        
+        if (spawnDebris) {
+          spawnDebris(hungryLarva.x, hungryLarva.y, 'hsl(0, 80%, 48%)', 4);
+        }
         return;
       }
 
@@ -888,5 +1096,44 @@ export class Ant implements LocomotionEntity {
 
     // Fallback if no path found (should be rare)
     return Math.atan2(targetY - this.y, targetX - this.x);
+  }
+
+  private isStorageFull(grid: WorldGrid, storage: Position): boolean {
+    const sCol = Math.floor(storage.x / CONFIG.CELL_SIZE);
+    const sRow = Math.floor(storage.y / CONFIG.CELL_SIZE);
+    const entranceCol = grid.nestEntranceCol;
+    const centerRow = STARTING_CHAMBER_CENTER_ROW;
+
+    // Check if it's the starting Queen larder
+    const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
+    
+    const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
+    const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
+    const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
+    const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
+
+    for (let c = minCol; c <= maxCol; c++) {
+      for (let r = minRow; r <= maxRow; r++) {
+        if (grid.isValid(c, r) && grid.getCell(c, r)?.type === 'NestAir') {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private getAvailableStorage(grid: WorldGrid, foodStorages: Position[]): Position | null {
+    let closest: Position | null = null;
+    let minDist = Infinity;
+    for (const storage of foodStorages) {
+      if (!this.isStorageFull(grid, storage)) {
+        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
+        if (dist < minDist) {
+          minDist = dist;
+          closest = storage;
+        }
+      }
+    }
+    return closest;
   }
 }
