@@ -1,5 +1,5 @@
 import { CONFIG } from './types';
-import type { Brood } from './types';
+import type { Brood, Position } from './types';
 
 export class BroodManager {
   public broodList: Brood[] = [];
@@ -44,5 +44,28 @@ export class BroodManager {
         }
       }
     }
+  }
+
+  public getNurseryOccupancy(nursery: Position): number {
+    return this.broodList.filter(b => {
+      if (b.beingCarried) return false;
+      const dx = b.x - nursery.x;
+      const dy = b.y - nursery.y;
+      return Math.sqrt(dx * dx + dy * dy) < 40; // nursery chamber radius is 40px
+    }).length;
+  }
+
+  public isNurseryFull(nursery: Position): boolean {
+    return this.getNurseryOccupancy(nursery) >= this.nurseryCapacity;
+  }
+
+  public isNurseryCrowded(nursery: Position): boolean {
+    return this.getNurseryOccupancy(nursery) >= Math.floor(this.nurseryCapacity * 0.8);
+  }
+
+  public getAvailableNursery(nurseries: Position[]): Position | null {
+    const valid = nurseries.filter(n => !this.isNurseryFull(n));
+    if (valid.length === 0) return null;
+    return valid.sort((a, b) => this.getNurseryOccupancy(a) - this.getNurseryOccupancy(b))[0];
   }
 }
