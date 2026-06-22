@@ -16,6 +16,9 @@ export class SimulationEngine {
   public pheromones: PheromoneGrid;
   public colony: ColonyManager;
   
+  private pheromoneCanvas: HTMLCanvasElement | null = null;
+  private pheromoneCtx: CanvasRenderingContext2D | null = null;
+  
   public speedMultiplier: number = 1; // 1x, 2x, 5x, 0 (paused)
   public showPheromones: boolean = true;
   public showDebug: boolean = true;
@@ -325,6 +328,43 @@ export class SimulationEngine {
     const width = this.canvas.width;
     const height = this.canvas.height;
 
+    const isSolid = (col: number, row: number): boolean => {
+      const cell = this.grid.getCell(col, row);
+      if (!cell) return true; // off-grid is solid
+      return cell.type === 'Dirt' || cell.type === 'Rock';
+    };
+
+    const drawBeveledCellPath = (ctx: CanvasRenderingContext2D, x: number, y: number, s: number, clipTL: boolean, clipTR: boolean, clipBR: boolean, clipBL: boolean) => {
+      ctx.beginPath();
+      if (clipTL) {
+        ctx.moveTo(x + s / 2, y);
+      } else {
+        ctx.moveTo(x, y);
+      }
+      if (clipTR) {
+        ctx.lineTo(x + s / 2, y);
+        ctx.lineTo(x + s, y + s / 2);
+      } else {
+        ctx.lineTo(x + s, y);
+      }
+      if (clipBR) {
+        ctx.lineTo(x + s, y + s / 2);
+        ctx.lineTo(x + s / 2, y + s);
+      } else {
+        ctx.lineTo(x + s, y + s);
+      }
+      if (clipBL) {
+        ctx.lineTo(x + s / 2, y + s);
+        ctx.lineTo(x, y + s / 2);
+      } else {
+        ctx.lineTo(x, y + s);
+      }
+      if (clipTL) {
+        ctx.lineTo(x, y + s / 2);
+      }
+      ctx.closePath();
+    };
+
     // Reset transform
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -376,6 +416,12 @@ export class SimulationEngine {
         const x = c * CONFIG.CELL_SIZE;
         const y = r * CONFIG.CELL_SIZE;
 
+        const clipTL = !isSolid(c, r - 1) && !isSolid(c - 1, r);
+        const clipTR = !isSolid(c, r - 1) && !isSolid(c + 1, r);
+        const clipBR = !isSolid(c, r + 1) && !isSolid(c + 1, r);
+        const clipBL = !isSolid(c, r + 1) && !isSolid(c - 1, r);
+        const hasClip = clipTL || clipTR || clipBR || clipBL;
+
         if (cell.type === 'Dirt') {
           // Draw grass only at the original surface height (row 130) if the cell above is Sky (air)
           const cellAbove = this.grid.getCell(c, r - 1);
@@ -384,6 +430,12 @@ export class SimulationEngine {
             // Draw a grass block: half dirt (bottom) and half short grass (top)
             const halfCell = CONFIG.CELL_SIZE / 2;
             
+            if (hasClip) {
+              ctx.save();
+              drawBeveledCellPath(ctx, x, y, CONFIG.CELL_SIZE, clipTL, clipTR, clipBR, clipBL);
+              ctx.clip();
+            }
+
             // Bottom half: dirt
             ctx.fillStyle = `hsl(28, 22%, ${16 + cell.noiseVal * 6}%)`;
             ctx.fillRect(x, y + halfCell, CONFIG.CELL_SIZE, halfCell);
@@ -391,6 +443,10 @@ export class SimulationEngine {
             // Top half: short grass (forest green)
             ctx.fillStyle = 'hsl(102, 50%, 34%)';
             ctx.fillRect(x, y, CONFIG.CELL_SIZE, halfCell);
+
+            if (hasClip) {
+              ctx.restore();
+            }
             
             // Draw tiny blades of short grass pointing up
             ctx.strokeStyle = 'hsl(102, 50%, 34%)';
@@ -402,6 +458,12 @@ export class SimulationEngine {
             ctx.lineTo(x + 3.5, y - 1.2);
             ctx.stroke();
           } else {
+            if (hasClip) {
+              ctx.save();
+              drawBeveledCellPath(ctx, x, y, CONFIG.CELL_SIZE, clipTL, clipTR, clipBR, clipBL);
+              ctx.clip();
+            }
+
             // Render rich textured dirt blocks
             ctx.fillStyle = `hsl(28, 22%, ${16 + cell.noiseVal * 6}%)`;
             ctx.fillRect(x, y, CONFIG.CELL_SIZE, CONFIG.CELL_SIZE);
@@ -411,8 +473,18 @@ export class SimulationEngine {
               ctx.fillStyle = 'hsl(28, 15%, 28%)';
               ctx.fillRect(x + 2, y + 2, 1.5, 1.5);
             }
+
+            if (hasClip) {
+              ctx.restore();
+            }
           }
         } else if (cell.type === 'Rock') {
+          if (hasClip) {
+            ctx.save();
+            drawBeveledCellPath(ctx, x, y, CONFIG.CELL_SIZE, clipTL, clipTR, clipBR, clipBL);
+            ctx.clip();
+          }
+
           // Render heavy slate rocks
           ctx.fillStyle = `hsl(0, 0%, ${24 + cell.noiseVal * 8}%)`;
           ctx.fillRect(x, y, CONFIG.CELL_SIZE, CONFIG.CELL_SIZE);
@@ -425,6 +497,10 @@ export class SimulationEngine {
             ctx.moveTo(x, y + 2);
             ctx.lineTo(x + CONFIG.CELL_SIZE, y + CONFIG.CELL_SIZE - 2);
             ctx.stroke();
+          }
+
+          if (hasClip) {
+            ctx.restore();
           }
         } else if (cell.type === 'Food') {
           // Skip rendering individual food cells; they are drawn as clustered apples
@@ -534,28 +610,70 @@ export class SimulationEngine {
 
     // 4. Render Pheromone Trails (glow effect) with Frustum Culling
     if (this.showPheromones) {
-      ctx.globalCompositeOperation = 'screen';
-      for (let c = startCol; c <= endCol; c++) {
-        for (let r = startRow; r <= endRow; r++) {
-          const homeVal = this.pheromones.getHomePheromone(c, r);
-          const foodVal = this.pheromones.getFoodPheromone(c, r);
+      const W = endCol - startCol + 1;
+      const H = endRow - startRow + 1;
 
-          if (homeVal > 0.05 || foodVal > 0.05) {
-            const x = c * CONFIG.CELL_SIZE;
-            const y = r * CONFIG.CELL_SIZE;
+      if (W > 0 && H > 0) {
+        if (!this.pheromoneCanvas) {
+          this.pheromoneCanvas = document.createElement('canvas');
+          this.pheromoneCtx = this.pheromoneCanvas.getContext('2d');
+        }
 
-            if (homeVal > 0.05) {
-              ctx.fillStyle = `hsla(210, 80%, 55%, ${Math.min(0.22, homeVal * 0.08)})`;
-              ctx.fillRect(x, y, CONFIG.CELL_SIZE, CONFIG.CELL_SIZE);
+        if (this.pheromoneCanvas.width !== W || this.pheromoneCanvas.height !== H) {
+          this.pheromoneCanvas.width = W;
+          this.pheromoneCanvas.height = H;
+        }
+
+        const pCtx = this.pheromoneCtx;
+        if (pCtx) {
+          pCtx.clearRect(0, 0, W, H);
+          const imgData = pCtx.createImageData(W, H);
+          const data = imgData.data;
+
+          let hasAnyPheromone = false;
+
+          for (let colIndex = 0; colIndex < W; colIndex++) {
+            const c = startCol + colIndex;
+            for (let rowIndex = 0; rowIndex < H; rowIndex++) {
+              const r = startRow + rowIndex;
+              const homeVal = this.pheromones.getHomePheromone(c, r);
+              const foodVal = this.pheromones.getFoodPheromone(c, r);
+
+              if (homeVal > 0.05 || foodVal > 0.05) {
+                hasAnyPheromone = true;
+                const idx = (rowIndex * W + colIndex) * 4;
+
+                const h = Math.min(1.0, homeVal * 0.15);
+                const f = Math.min(1.0, foodVal * 0.2);
+
+                data[idx] = Math.floor(f * 255);
+                data[idx + 1] = Math.min(255, Math.floor(f * 120 + h * 100));
+                data[idx + 2] = Math.floor(h * 255);
+                data[idx + 3] = Math.min(255, Math.floor(Math.max(f, h) * 255));
+              }
             }
-            if (foodVal > 0.05) {
-              ctx.fillStyle = `hsla(32, 90%, 55%, ${Math.min(0.28, foodVal * 0.12)})`;
-              ctx.fillRect(x, y, CONFIG.CELL_SIZE, CONFIG.CELL_SIZE);
-            }
+          }
+
+          if (hasAnyPheromone) {
+            pCtx.putImageData(imgData, 0, 0);
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.filter = 'blur(4px)';
+
+            ctx.drawImage(
+              this.pheromoneCanvas,
+              startCol * CONFIG.CELL_SIZE,
+              startRow * CONFIG.CELL_SIZE,
+              W * CONFIG.CELL_SIZE,
+              H * CONFIG.CELL_SIZE
+            );
+            ctx.restore();
           }
         }
       }
-      ctx.globalCompositeOperation = 'source-over';
     }
 
     // 5. Draw Queen
