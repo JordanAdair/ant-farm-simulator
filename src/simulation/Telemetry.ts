@@ -29,6 +29,7 @@ export class TelemetryTracker {
       foragers: stats.foragerCount,
       diggers: stats.diggerCount,
       nurses: stats.nurseCount,
+      soldiers: stats.soldierCount,
       food: stats.foodStockpile,
       volume: Math.floor(stats.nestVolume * 0.25),
       dirtDug: totalDirtDugGlobal,

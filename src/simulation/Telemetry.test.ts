@@ -18,6 +18,7 @@ describe('TelemetryTracker', () => {
       foragerCount: 1,
       diggerCount: 1,
       nurseCount: 1,
+      soldierCount: 0,
       eggCount: 0,
       larvaCount: 0,
       pupaCount: 0,
@@ -58,7 +59,7 @@ describe('TelemetryTracker', () => {
     const tracker = new TelemetryTracker();
     
     const mockStats: ColonyStats = {
-      workerCount: 0, foragerCount: 0, diggerCount: 0, nurseCount: 0,
+      workerCount: 0, foragerCount: 0, diggerCount: 0, nurseCount: 0, soldierCount: 0,
       eggCount: 0, larvaCount: 0, pupaCount: 0, foodStockpile: 0,
       dirtDugCount: 0, nestVolume: 0, activeProject: '', elapsedTime: 0,
     };

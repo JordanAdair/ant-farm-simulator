@@ -69,26 +69,35 @@ describe('ColonyManager', () => {
 
   it('should correctly select the underrepresented role based on target ratios', () => {
     const colony = new ColonyManager(200);
-    // Initial roles are: 3 Foragers, 4 Diggers, 1 Nurse
-    // Total 8 ants.
-    // Ratios: Forager: 3/8 = 37.5% (target 40%), Digger: 4/8 = 50% (target 35%), Nurse: 1/8 = 12.5% (target 25%)
-    // Deviation from target (target - current):
-    // Forager: 40% - 37.5% = 2.5%
-    // Digger: 35% - 50% = -15%
-    // Nurse: 25% - 12.5% = 12.5%
-    // Nurse is furthest below target, so it should be underrepresented.
-    // Let's call the private getUnderRepresentedRole method using type casting:
+    
+    // Explicitly configure roles to test underrepresented calculation:
+    // Say we have 3 Foragers, 3 Diggers, 2 Soldiers, 0 Nurses (Total 8)
+    // Targets: Foragers 30%, Diggers 40%, Nurses 15%, Soldiers 15%
+    // Nurses are at 0/8 = 0%, so they must be underrepresented.
+    colony.ants[0].role = 'Forager';
+    colony.ants[1].role = 'Forager';
+    colony.ants[2].role = 'Forager';
+    colony.ants[3].role = 'Digger';
+    colony.ants[4].role = 'Digger';
+    colony.ants[5].role = 'Digger';
+    colony.ants[6].role = 'Soldier';
+    colony.ants[7].role = 'Soldier';
+
     const role = (colony as any).getUnderRepresentedRole();
     expect(role).toBe('Nurse');
 
-    // If we add another Nurse, we have: 3 Foragers, 4 Diggers, 2 Nurses (Total 9)
-    // Ratios: Forager: 33.3%, Digger: 44.4%, Nurse: 22.2%
-    // Devs: Forager: 6.7%, Digger: -9.4%, Nurse: 2.8%
-    // Forager is now furthest below target.
-    colony.ants[0].role = 'Nurse'; // Convert one Forager to Nurse -> 2 Foragers, 4 Diggers, 2 Nurses (Total 8)
-    // Ratios: Forager: 25%, Digger: 50%, Nurse: 25%
-    // Devs: Forager: 15%, Digger: -15%, Nurse: 0%
-    // Forager should be underrepresented
+    // Force Forager to be underrepresented:
+    // Set roles: 1 Forager, 4 Diggers, 2 Nurses, 1 Soldier (Total 8)
+    // Ratios: Forager 12.5% (target 30%, diff = 17.5%)
+    colony.ants[0].role = 'Forager';
+    colony.ants[1].role = 'Digger';
+    colony.ants[2].role = 'Digger';
+    colony.ants[3].role = 'Digger';
+    colony.ants[4].role = 'Digger';
+    colony.ants[5].role = 'Nurse';
+    colony.ants[6].role = 'Nurse';
+    colony.ants[7].role = 'Soldier';
+
     const role2 = (colony as any).getUnderRepresentedRole();
     expect(role2).toBe('Forager');
   });

@@ -2,7 +2,7 @@ export type CellType = 'Sky' | 'Dirt' | 'Rock' | 'NestAir' | 'Food' | 'Water';
 
 export type FoodType = 'Apple' | 'Foliage' | 'Carcass';
 
-export type AntRole = 'Forager' | 'Digger' | 'Nurse';
+export type AntRole = 'Forager' | 'Digger' | 'Nurse' | 'Soldier';
 
 export type AntState =
   | 'Wandering'
@@ -12,7 +12,9 @@ export type AntState =
   | 'DiggingTunnel'
   | 'Nursing'
   | 'Resting'
-  | 'CarryingDirt';
+  | 'CarryingDirt'
+  | 'Patrolling'
+  | 'Attacking';
 
 export type BroodType = 'Egg' | 'Larva' | 'Pupa';
 
@@ -32,6 +34,7 @@ export interface ColonyStats {
   foragerCount: number;
   diggerCount: number;
   nurseCount: number;
+  soldierCount: number;
   eggCount: number;
   larvaCount: number;
   pupaCount: number;
@@ -63,6 +66,7 @@ export interface TelemetryPoint {
   foragers: number;
   diggers: number;
   nurses: number;
+  soldiers: number;
   food: number;
   volume: number;
   dirtDug: number;
@@ -109,6 +113,13 @@ export const CONFIG = {
   // Water & Weather configurations
   WATER_EVAPORATION_RATE: 2,
   QUEEN_MAX_AGE: 15, // max age of Queen in game days
+
+  // Combat, Soldier & Threat settings
+  SOLDIER_RATIO: 0.15,
+  THREAT_SPAWN_INTERVAL: 2400, // Spawn attempt every ~40 seconds
+  ATTACK_RANGE: 12,
+  SOLDIER_DAMAGE: 1.5,
+  THREAT_DAMAGE: 1.0,
 
   // Offline progression limits
   MAX_OFFLINE_TIME: 86400 * 7, // 1 week max

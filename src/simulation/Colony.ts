@@ -5,6 +5,7 @@ import { WorldGrid } from './Grid';
 import { generateProceduralNestPlan, isCellInsidePlanStep } from './NestPlanner';
 import { BroodManager } from './BroodManager';
 import { findPath } from './Pathfinder';
+import { Threat } from './Threat';
 
 export class ColonyManager {
   private _grid?: WorldGrid;
@@ -143,6 +144,7 @@ export class ColonyManager {
   public excavationPlan: ExcavationStep[] = [];
   public lastActiveStepName: string | null = null;
   public broodManager: BroodManager;
+  public threats: Threat[] = [];
 
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
@@ -178,11 +180,11 @@ export class ColonyManager {
   }
 
   private spawnInitialColony(startX: number, startY: number) {
-    // 3 foragers, 4 diggers, 1 nurse (starts small to allow growth progression)
+    // 3 foragers, 3 diggers, 1 nurse, 1 soldier
     const initialRoles: AntRole[] = [
       'Forager', 'Forager', 'Forager',
-      'Digger', 'Digger', 'Digger', 'Digger',
-      'Nurse'
+      'Digger', 'Digger', 'Digger',
+      'Nurse', 'Soldier'
     ];
     initialRoles.forEach((role) => {
       // Give them a random position within the central chamber
@@ -213,7 +215,7 @@ export class ColonyManager {
   public update(speedMultiplier: number, grid?: WorldGrid) {
     const activeGrid = grid || new WorldGrid();
     if (activeGrid && typeof activeGrid.getCell !== 'function') {
-      (activeGrid as any).getCell = (c: number, r: number) => {
+      (activeGrid as any).getCell = (_c: number, _r: number) => {
         return { type: 'NestAir', foodAmount: 0, noiseVal: 0 };
       };
     }
@@ -489,42 +491,48 @@ export class ColonyManager {
   private balanceAntRoles() {
     if (this.ants.length === 0) return;
 
-    // Target ratios: Diggers: 50%, Foragers: 35%, Nurses: 15%
-    const foragerTarget = 0.35;
-    const diggerTarget = 0.50;
+    // Target ratios: Diggers: 40%, Foragers: 30%, Nurses: 15%, Soldiers: 15%
+    const foragerTarget = 0.30;
+    const diggerTarget = 0.40;
     const nurseTarget = 0.15;
+    const soldierTarget = 0.15;
 
     let foragers = 0;
     let diggers = 0;
     let nurses = 0;
+    let soldiers = 0;
 
     this.ants.forEach(ant => {
       if (ant.role === 'Forager') foragers++;
       else if (ant.role === 'Digger') diggers++;
       else if (ant.role === 'Nurse') nurses++;
+      else if (ant.role === 'Soldier') soldiers++;
     });
 
     const total = this.ants.length;
     const fDiff = foragers / total - foragerTarget;
     const dDiff = diggers / total - diggerTarget;
     const nDiff = nurses / total - nurseTarget;
+    const sDiff = soldiers / total - soldierTarget;
 
     // Periodically re-assign roles if they deviate by more than 2% from target
     if (Math.random() < 0.01) {
-      if (fDiff > 0.02 && (dDiff < 0 || nDiff < 0)) {
-        const excessAnt = this.ants.find(a => a.role === 'Forager' && a.cargo === 'None');
-        if (excessAnt) {
-          excessAnt.role = dDiff < nDiff ? 'Digger' : 'Nurse';
-        }
-      } else if (dDiff > 0.02 && (fDiff < 0 || nDiff < 0)) {
-        const excessAnt = this.ants.find(a => a.role === 'Digger' && a.cargo === 'None');
-        if (excessAnt) {
-          excessAnt.role = fDiff < nDiff ? 'Forager' : 'Nurse';
-        }
-      } else if (nDiff > 0.02 && (fDiff < 0 || dDiff < 0)) {
-        const excessAnt = this.ants.find(a => a.role === 'Nurse' && a.cargo === 'None' && !a.isHoldingBrood);
-        if (excessAnt) {
-          excessAnt.role = fDiff < dDiff ? 'Forager' : 'Digger';
+      const diffs = [
+        { role: 'Forager', diff: fDiff, list: this.ants.filter(a => a.role === 'Forager' && a.cargo === 'None') },
+        { role: 'Digger', diff: dDiff, list: this.ants.filter(a => a.role === 'Digger' && a.cargo === 'None') },
+        { role: 'Nurse', diff: nDiff, list: this.ants.filter(a => a.role === 'Nurse' && a.cargo === 'None' && !a.isHoldingBrood) },
+        { role: 'Soldier', diff: sDiff, list: this.ants.filter(a => a.role === 'Soldier') }
+      ];
+      
+      const excess = diffs.filter(d => d.diff > 0.02 && d.list.length > 0).sort((a, b) => b.diff - a.diff)[0];
+      const deficit = diffs.sort((a, b) => a.diff - b.diff)[0];
+      
+      if (excess && deficit && excess.role !== deficit.role) {
+        const ant = excess.list[0];
+        if (ant) {
+          ant.role = deficit.role as AntRole;
+          ant.state = 'Wandering';
+          ant.currentPath = null;
         }
       }
     }
@@ -534,22 +542,29 @@ export class ColonyManager {
     let foragers = 0;
     let diggers = 0;
     let nurses = 0;
+    let soldiers = 0;
 
     this.ants.forEach(ant => {
       if (ant.role === 'Forager') foragers++;
       else if (ant.role === 'Digger') diggers++;
       else if (ant.role === 'Nurse') nurses++;
+      else if (ant.role === 'Soldier') soldiers++;
     });
 
     const total = this.ants.length || 1;
-    const fDiff = 0.40 - (foragers / total);
-    const dDiff = 0.35 - (diggers / total);
-    const nDiff = 0.25 - (nurses / total);
+    const fDiff = 0.30 - (foragers / total);
+    const dDiff = 0.40 - (diggers / total);
+    const nDiff = 0.15 - (nurses / total);
+    const sDiff = 0.15 - (soldiers / total);
 
-    // Return the role furthest below its target
-    if (fDiff >= dDiff && fDiff >= nDiff) return 'Forager';
-    if (dDiff >= nDiff) return 'Digger';
-    return 'Nurse';
+    const diffs = [
+      { role: 'Forager' as AntRole, diff: fDiff },
+      { role: 'Digger' as AntRole, diff: dDiff },
+      { role: 'Nurse' as AntRole, diff: nDiff },
+      { role: 'Soldier' as AntRole, diff: sDiff }
+    ];
+
+    return diffs.sort((a, b) => b.diff - a.diff)[0].role;
   }
 
 
@@ -610,11 +625,13 @@ export class ColonyManager {
     let foragers = 0;
     let diggers = 0;
     let nurses = 0;
+    let soldiers = 0;
 
     this.ants.forEach(ant => {
       if (ant.role === 'Forager') foragers++;
       else if (ant.role === 'Digger') diggers++;
       else if (ant.role === 'Nurse') nurses++;
+      else if (ant.role === 'Soldier') soldiers++;
     });
 
     let eggs = 0;
@@ -634,6 +651,7 @@ export class ColonyManager {
       foragerCount: foragers,
       diggerCount: diggers,
       nurseCount: nurses,
+      soldierCount: soldiers,
       eggCount: eggs,
       larvaCount: larvae,
       pupaCount: pupae,

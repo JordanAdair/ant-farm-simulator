@@ -5,12 +5,14 @@ export class PheromoneGrid {
   public cols: number;
   public rows: number;
   
-  // 2D grids for home and food pheromones
+  // 2D grids for home, food, and danger pheromones
   public homeGrid: number[][];
   public foodGrid: number[][];
+  public dangerGrid: number[][];
   
   private tempHomeGrid: number[][];
   private tempFoodGrid: number[][];
+  private tempDangerGrid: number[][];
 
   constructor() {
     this.cols = CONFIG.COLS;
@@ -18,14 +20,18 @@ export class PheromoneGrid {
     
     this.homeGrid = [];
     this.foodGrid = [];
+    this.dangerGrid = [];
     this.tempHomeGrid = [];
     this.tempFoodGrid = [];
+    this.tempDangerGrid = [];
     
     for (let c = 0; c < this.cols; c++) {
       this.homeGrid[c] = new Array(this.rows).fill(0);
       this.foodGrid[c] = new Array(this.rows).fill(0);
+      this.dangerGrid[c] = new Array(this.rows).fill(0);
       this.tempHomeGrid[c] = new Array(this.rows).fill(0);
       this.tempFoodGrid[c] = new Array(this.rows).fill(0);
+      this.tempDangerGrid[c] = new Array(this.rows).fill(0);
     }
   }
 
@@ -41,6 +47,12 @@ export class PheromoneGrid {
     }
   }
 
+  public addDangerPheromone(col: number, row: number, strength: number) {
+    if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+      this.dangerGrid[col][row] = Math.min(10.0, this.dangerGrid[col][row] + strength);
+    }
+  }
+
   public getHomePheromone(col: number, row: number): number {
     if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
       return this.homeGrid[col][row];
@@ -51,6 +63,13 @@ export class PheromoneGrid {
   public getFoodPheromone(col: number, row: number): number {
     if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
       return this.foodGrid[col][row];
+    }
+    return 0;
+  }
+
+  public getDangerPheromone(col: number, row: number): number {
+    if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+      return this.dangerGrid[col][row];
     }
     return 0;
   }
@@ -93,9 +112,11 @@ export class PheromoneGrid {
           }
         }
         this.foodGrid[c][r] = Math.max(0, this.foodGrid[c][r] - currentDecay);
+        this.dangerGrid[c][r] = Math.max(0, this.dangerGrid[c][r] - decay * 1.5);
         
         this.tempHomeGrid[c][r] = this.homeGrid[c][r];
         this.tempFoodGrid[c][r] = this.foodGrid[c][r];
+        this.tempDangerGrid[c][r] = this.dangerGrid[c][r];
       }
     }
 
@@ -106,6 +127,7 @@ export class PheromoneGrid {
 
         let homeSum = 0;
         let foodSum = 0;
+        let dangerSum = 0;
         let walkableCount = 0;
 
         // Check 4 cardinal neighbors
@@ -120,6 +142,7 @@ export class PheromoneGrid {
           if (grid.isWalkable(nc, nr)) {
             homeSum += this.homeGrid[nc][nr];
             foodSum += this.foodGrid[nc][nr];
+            dangerSum += this.dangerGrid[nc][nr];
             walkableCount++;
           }
         }
@@ -127,9 +150,11 @@ export class PheromoneGrid {
         if (walkableCount > 0) {
           const avgHome = homeSum / walkableCount;
           const avgFood = foodSum / walkableCount;
+          const avgDanger = dangerSum / walkableCount;
           
           this.tempHomeGrid[c][r] = this.homeGrid[c][r] * (1 - diffRate) + avgHome * diffRate;
           this.tempFoodGrid[c][r] = this.foodGrid[c][r] * (1 - diffRate) + avgFood * diffRate;
+          this.tempDangerGrid[c][r] = this.dangerGrid[c][r] * (1 - diffRate) + avgDanger * diffRate;
         }
       }
     }
@@ -139,6 +164,7 @@ export class PheromoneGrid {
       for (let r = 0; r < this.rows; r++) {
         this.homeGrid[c][r] = this.tempHomeGrid[c][r];
         this.foodGrid[c][r] = this.tempFoodGrid[c][r];
+        this.dangerGrid[c][r] = this.tempDangerGrid[c][r];
       }
     }
   }
@@ -147,6 +173,7 @@ export class PheromoneGrid {
     for (let c = 0; c < this.cols; c++) {
       this.homeGrid[c].fill(0);
       this.foodGrid[c].fill(0);
+      this.dangerGrid[c].fill(0);
     }
   }
 }
