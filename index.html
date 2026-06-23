@@ -254,10 +254,66 @@
               <span class="stat-diff-label">Tunnels Excavated</span>
               <span class="stat-diff-val positive" id="offline-dirt-dug">+0 cells</span>
             </div>
+            <div class="offline-stat">
+              <span class="stat-diff-label">Food Decayed</span>
+              <span class="stat-diff-val negative" id="offline-food-decayed">-0</span>
+            </div>
+            <div class="offline-stat">
+              <span class="stat-diff-label">Brood Losses</span>
+              <span class="stat-diff-val negative" id="offline-brood-losses">-0</span>
+            </div>
+            <div class="offline-stat" style="grid-column: span 2;">
+              <span class="stat-diff-label">Caved-in Tunnels Cleared</span>
+              <span class="stat-diff-val positive" id="offline-tunnels-cleared">0 cells</span>
+            </div>
+          </div>
+
+          <div id="offline-logs-container" class="offline-logs-container hidden">
+            <span class="offline-logs-title">OFFLINE THREAT LOGS</span>
+            <div id="offline-logs-list" class="offline-logs-list"></div>
           </div>
 
           <div class="modal-actions">
             <button id="close-offline-btn" class="primary-btn">Resume Observation</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Colony Collapse (Game Over) Overlay -->
+      <div id="game-over-overlay" class="modal-overlay hidden">
+        <div class="modal-card game-over-card">
+          <div class="modal-header">
+            <span class="modal-icon">💀</span>
+            <h2 class="game-over-title">COLONY COLLAPSE</h2>
+          </div>
+          <p class="game-over-desc">The Queen has died. Without her royal presence, the colony has collapsed.</p>
+          
+          <div class="game-over-cause">
+            <span class="cause-label">Cause of Death</span>
+            <span id="game-over-cause-val" class="cause-val">Starvation</span>
+          </div>
+
+          <div class="game-over-stats-grid">
+            <div class="game-over-stat">
+              <span class="stat-label">Days Survived</span>
+              <span class="stat-value" id="game-over-days">0</span>
+            </div>
+            <div class="game-over-stat">
+              <span class="stat-label">Max Population</span>
+              <span class="stat-value" id="game-over-max-pop">0</span>
+            </div>
+            <div class="game-over-stat">
+              <span class="stat-label">Total Generations</span>
+              <span class="stat-value" id="game-over-generations">0</span>
+            </div>
+            <div class="game-over-stat">
+              <span class="stat-label">Excavated Volume</span>
+              <span class="stat-value" id="game-over-volume">0 cm³</span>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="restart-sim-btn" class="primary-btn">Found New Colony</button>
           </div>
         </div>
       </div>

@@ -6,7 +6,7 @@ import { PheromoneGrid } from './Pheromones';
 import { findPath } from './Pathfinder';
 import { moveAndAvoidObstacles, normalizeAngle } from './Locomotion';
 import type { LocomotionEntity } from './Locomotion';
-import { BroodManager } from './BroodManager';
+import { BroodManager, isNurseryFlooded } from './BroodManager';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -59,6 +59,8 @@ export class Ant implements LocomotionEntity {
   // Age and lifecycle
   public age: number = 0;
   public maxAge: number;
+  public submergedTime: number = 0;
+  public health: number = 100;
 
   // Steering targets resolved by state machines
   public desiredAngle: number;
@@ -117,11 +119,34 @@ export class Ant implements LocomotionEntity {
     speedMultiplier: number,
     spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
-    const speed = CONFIG.ANT_SPEED * speedMultiplier;
+    const col = Math.floor(this.x / CONFIG.CELL_SIZE);
+    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
+    const cell = grid.getCell(col, row);
+    const isSubmerged = cell && cell.type === 'Water';
+
+    let speed = CONFIG.ANT_SPEED * speedMultiplier;
+    if (isSubmerged) {
+      speed *= 0.4;
+    }
+
     this.legCycle += 0.25 * speedMultiplier;
 
     // Energy slowly depletes. The world is deep, so they need enough energy to make the long walk home!
     this.energy -= 0.002 * speedMultiplier;
+
+    // Submerged drowning logic
+    if (isSubmerged) {
+      this.submergedTime += (1 / 60) * speedMultiplier;
+      if (this.submergedTime > 5.0) {
+        this.health -= 2 * speedMultiplier;
+      }
+      if (spawnDebris && Math.random() < 0.05 * speedMultiplier) {
+        spawnDebris(this.x, this.y, 'rgba(156, 180, 215, 0.65)', 1);
+      }
+    } else {
+      this.submergedTime = 0;
+      this.health = Math.min(100, this.health + 0.5 * speedMultiplier);
+    }
     if (this.energy < 25 && this.state !== 'Resting') {
       this.state = 'Resting'; // go home and eat
     }
@@ -686,8 +711,8 @@ export class Ant implements LocomotionEntity {
       const brood = broodList.find(b => b.id === this.targetBroodId);
       
       if (brood) {
-        // Select nursery target based on occupancy
-        const targetNursery = broodManager.getAvailableNursery(nurseries) || nurseries[Math.abs(this.num) % nurseries.length];
+        // Select nursery target based on occupancy and dryness
+        const targetNursery = broodManager.getAvailableDryNursery(grid, nurseries) || nurseries.find(n => !isNurseryFlooded(grid, n)) || nurseries[Math.abs(this.num) % nurseries.length];
         
         const spacedPos = targetNursery ? broodManager.findSpacedPositionInNursery(grid, targetNursery) : null;
         // Add a small individual offset so they don't pile exactly on one pixel if no spaced position found
@@ -942,21 +967,40 @@ export class Ant implements LocomotionEntity {
       }
     }
 
-    // State check: pick up misplaced eggs / pupae and take them to nursery (ALWAYS run this check)
+    // State check: pick up misplaced or flooded brood (ALWAYS run this check)
     const strayBrood = broodList.find(b => {
       if (b.beingCarried) return false;
-      if (b.type !== 'Egg' && b.type !== 'Pupa') return false;
-      
-      // Check if it is close to ANY excavated nursery
-      let inNursery = false;
+
+      // 1. Is it in a water cell?
+      const bCol = Math.floor(b.x / CONFIG.CELL_SIZE);
+      const bRow = Math.floor(b.y / CONFIG.CELL_SIZE);
+      const bCell = grid.getCell(bCol, bRow);
+      if (bCell && bCell.type === 'Water') {
+        return true;
+      }
+
+      // 2. Is it in a flooded nursery?
       for (const nursery of nurseries) {
         const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
-        if (dist < 40) {
-          inNursery = true;
-          break;
+        if (dist < 40 && isNurseryFlooded(grid, nursery)) {
+          return true;
         }
       }
-      return !inNursery;
+
+      // 3. Original stray egg/pupa check (misplaced eggs/pupae)
+      if (b.type === 'Egg' || b.type === 'Pupa') {
+        let inDryNursery = false;
+        for (const nursery of nurseries) {
+          const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
+          if (dist < 40 && !isNurseryFlooded(grid, nursery)) {
+            inDryNursery = true;
+            break;
+          }
+        }
+        return !inDryNursery;
+      }
+
+      return false;
     });
 
     if (strayBrood && !this.isHoldingBrood && this.cargo === 'None') {

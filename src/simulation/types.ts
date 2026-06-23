@@ -1,4 +1,4 @@
-export type CellType = 'Sky' | 'Dirt' | 'Rock' | 'NestAir' | 'Food';
+export type CellType = 'Sky' | 'Dirt' | 'Rock' | 'NestAir' | 'Food' | 'Water';
 
 export type FoodType = 'Apple' | 'Foliage' | 'Carcass';
 
@@ -105,6 +105,10 @@ export const CONFIG = {
   PHEROMONE_DECAY: 0.004,
   PHEROMONE_DIFFUSION: 0.1,
   PHEROMONE_LAY_STRENGTH: 1.0,
+
+  // Water & Weather configurations
+  WATER_EVAPORATION_RATE: 2,
+  QUEEN_MAX_AGE: 15, // max age of Queen in game days
 
   // Offline progression limits
   MAX_OFFLINE_TIME: 86400 * 7, // 1 week max

@@ -172,5 +172,33 @@ export class BroodManager {
     this.broodList.push(newEgg);
     addLog('The Queen laid a new egg.', 'births');
   }
+
+  public getAvailableDryNursery(grid: WorldGrid, nurseries: Position[]): Position | null {
+    const dryNurseries = nurseries.filter(n => !isNurseryFlooded(grid, n));
+    if (dryNurseries.length === 0) return null;
+    const valid = dryNurseries.filter(n => !this.isNurseryFull(n));
+    if (valid.length === 0) {
+      return dryNurseries.sort((a, b) => this.getNurseryOccupancy(a) - this.getNurseryOccupancy(b))[0];
+    }
+    return valid.sort((a, b) => this.getNurseryOccupancy(a) - this.getNurseryOccupancy(b))[0];
+  }
+}
+
+export function isNurseryFlooded(grid: WorldGrid, nursery: Position): boolean {
+  const stepSize = CONFIG.CELL_SIZE;
+  const col = Math.floor(nursery.x / stepSize);
+  const row = Math.floor(nursery.y / stepSize);
+
+  for (let c = col - 10; c <= col + 10; c++) {
+    for (let r = row - 10; r <= row + 10; r++) {
+      if (grid.isValid(c, r)) {
+        const cell = grid.getCell(c, r);
+        if (cell && cell.type === 'Water') {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 

@@ -7,6 +7,7 @@ export interface Cell {
   noiseVal: number; // for visual grit texturing
   durability?: number; // rock durability (5 hits to clear)
   foodType?: FoodType;
+  isMoldy?: boolean;
 }
 
 export class WorldGrid {
@@ -154,7 +155,7 @@ export class WorldGrid {
   public isWalkable(col: number, row: number): boolean {
     const cell = this.getCell(col, row);
     if (!cell) return false;
-    return cell.type === 'NestAir' || cell.type === 'Sky' || cell.type === 'Food';
+    return cell.type === 'NestAir' || cell.type === 'Sky' || cell.type === 'Food' || cell.type === 'Water';
   }
 
   public isDiggable(col: number, row: number): boolean {
@@ -341,5 +342,78 @@ export class WorldGrid {
       }
     }
     return volume;
+  }
+
+  // Cellular water simulation update
+  public updateWater() {
+    for (let r = this.rows - 1; r >= 0; r--) {
+      // Collect all water cells in row r
+      const waterCols: number[] = [];
+      for (let c = 0; c < this.cols; c++) {
+        if (this.cells[c][r].type === 'Water') {
+          waterCols.push(c);
+        }
+      }
+      if (waterCols.length === 0) continue;
+
+      // Shuffle columns to prevent directional flow bias
+      for (let i = waterCols.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = waterCols[i];
+        waterCols[i] = waterCols[j];
+        waterCols[j] = temp;
+      }
+
+      for (const c of waterCols) {
+        // Double check type in case it was swapped by a lateral move in the same row
+        if (this.cells[c][r].type !== 'Water') continue;
+
+        // 1. Try directly below
+        const belowR = r + 1;
+        if (belowR < this.rows) {
+          const belowCell = this.cells[c][belowR];
+          if (belowCell.type === 'NestAir' || belowCell.type === 'Sky') {
+            belowCell.type = 'Water';
+            this.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+            continue;
+          }
+        }
+
+        // 2. Try diagonal below (left or right randomly)
+        const diagOffsets = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+        let movedDiag = false;
+        for (const dc of diagOffsets) {
+          const tc = c + dc;
+          const tr = r + 1;
+          if (this.isValid(tc, tr)) {
+            const diagCell = this.cells[tc][tr];
+            if (diagCell.type === 'NestAir' || diagCell.type === 'Sky') {
+              diagCell.type = 'Water';
+              this.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+              movedDiag = true;
+              break;
+            }
+          }
+        }
+        if (movedDiag) continue;
+
+        // 3. Try lateral left/right randomly
+        const latOffsets = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+        let movedLat = false;
+        for (const dc of latOffsets) {
+          const tc = c + dc;
+          if (this.isValid(tc, r)) {
+            const latCell = this.cells[tc][r];
+            if (latCell.type === 'NestAir' || latCell.type === 'Sky') {
+              latCell.type = 'Water';
+              this.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+              movedLat = true;
+              break;
+            }
+          }
+        }
+        if (movedLat) continue;
+      }
+    }
   }
 }

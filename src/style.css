@@ -1044,3 +1044,105 @@ body.hud-collapsed .log-panel {
   font-weight: 400;
 }
 
+/* Game Over Screen & Offline Logs Glassmorphism styling */
+.game-over-card {
+  background: rgba(26, 12, 12, 0.75) !important;
+  border: 1px solid rgba(234, 67, 53, 0.2) !important;
+  box-shadow: 0 0 50px rgba(234, 67, 53, 0.15) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+}
+
+.game-over-title {
+  color: var(--accent-red) !important;
+  text-shadow: 0 0 15px rgba(234, 67, 53, 0.4);
+  letter-spacing: 2px;
+}
+
+.game-over-cause {
+  background: rgba(234, 67, 53, 0.08);
+  border: 1px solid rgba(234, 67, 53, 0.15);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cause-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+
+.cause-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: capitalize;
+}
+
+.game-over-stats-grid {
+  display: grid;
+  grid-template-cols: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.game-over-stat {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.offline-logs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  margin-top: 10px;
+}
+
+.offline-logs-title {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.offline-logs-list {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.offline-log-item {
+  line-height: 1.4;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  padding-bottom: 3px;
+}
+
+.offline-log-item.warning {
+  color: hsl(38, 90%, 65%);
+}
+
+.offline-log-item.danger {
+  color: hsl(0, 80%, 74%);
+}
+
