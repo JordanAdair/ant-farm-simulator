@@ -195,15 +195,12 @@ export class Environment {
       if (grid && Math.random() < 0.08 * mult) {
         grid.erodeMounds();
       }
-      // Rain surface water spawning
-      if (grid && Math.random() < 0.25 * mult) {
-        const col = Math.floor(Math.random() * grid.cols);
-        const surfRow = grid.getSurfaceRow(col);
-        if (surfRow > 0) {
-          const cell = grid.getCell(col, surfRow - 1);
-          if (cell && cell.type === 'Sky') {
-            cell.type = 'Water';
-          }
+      // Rain entrance water spawning (rebalanced trickle, no surface pooling)
+      if (grid && Math.random() < 0.02 * mult) {
+        const col = grid.nestEntranceCol - 2 + Math.floor(Math.random() * 4);
+        const cell = grid.getCell(col, CONFIG.SKY_HEIGHT);
+        if (cell && (cell.type === 'NestAir' || cell.type === 'Sky')) {
+          cell.type = 'Water';
         }
       }
     } else if (this.weather === 'Sunny') {
