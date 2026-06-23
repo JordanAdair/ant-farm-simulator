@@ -11,6 +11,7 @@ export class ColonyManager {
   private _grid?: WorldGrid;
   private _fallbackFoodStockpile: number = 200;
   public maxPopulation: number = 0;
+  public maxGenerationReached: number = 1;
 
   public get grid(): WorldGrid | undefined {
     return this._grid;
@@ -164,6 +165,7 @@ export class ColonyManager {
       maxAge: CONFIG.QUEEN_MAX_AGE,
       submergedTime: 0,
       health: 100,
+      isDead: false,
     };
 
     this.maxPopulation = 8;
@@ -485,6 +487,9 @@ export class ColonyManager {
     }
     const newAnt = new Ant(id, x, y, role, num, childBrain, childGen);
     this.ants.push(newAnt);
+    if (childGen > this.maxGenerationReached) {
+      this.maxGenerationReached = childGen;
+    }
     this.addLog(`Worker ${num} (Gen ${childGen}) hatched and joined the colony as a ${role}.`, 'births');
   }
 
@@ -687,9 +692,11 @@ export class ColonyManager {
       maxAge: CONFIG.QUEEN_MAX_AGE,
       submergedTime: 0,
       health: 100,
+      isDead: false,
     };
 
     this.maxPopulation = 8;
+    this.maxGenerationReached = 1;
     
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
     this.spawnInitialColony(startX, startY);

@@ -275,12 +275,13 @@ export class Threat implements LocomotionEntity {
     }
 
     // Queen target
-    if (target.isDead !== undefined && target.direction !== undefined) {
+    if (target.eggTimer !== undefined && target.direction !== undefined) {
       // Target is Queen
       target.health = Math.max(0, target.health - this.damage * speedMultiplier * 0.15);
       if (target.health <= 0) {
         target.isDead = true;
         target.deathReason = 'predator attack';
+        addLog('The Queen has been slain by a predator! Colony Collapse is imminent.', 'deaths');
       }
     } 
     // Ant target
