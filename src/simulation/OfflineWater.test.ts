@@ -102,7 +102,7 @@ describe('Offline Progression Physics & Threats', () => {
     // Add some food cells in the default starting larder box
     const larder = colony.getLarderBoxes(grid)[0];
     const fc = larder.minCol + 1;
-    const fr = larder.minRow + 1;
+    const fr = larder.maxRow;
     grid.setCellType(fc, fr, 'Food');
     grid.cells[fc][fr].foodAmount = 25; // Increase to 25 so it does not decay to 0 within 60 seconds
     grid.cells[fc][fr].foodType = 'Apple';

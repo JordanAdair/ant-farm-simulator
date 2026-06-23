@@ -391,16 +391,16 @@ export class OfflineProgression {
 
     const threatLogs: string[] = [];
 
-    // 1. Spawn Rain Water Offline
+    // 1. Spawn Rain Water Offline (rebalanced trickle at nest entrance, no surface pooling)
     let waterAccumulated = 0;
     if (rainySeconds > 0) {
-      const spawnCount = Math.min(10000, Math.floor(rainySeconds * 15));
+      const spawnCount = Math.min(2000, Math.floor(rainySeconds * 1.2));
       for (let i = 0; i < spawnCount; i++) {
-        const col = Math.floor(Math.random() * grid.cols);
-        const surfRow = grid.getSurfaceRow(col);
-        if (surfRow > 0) {
-          const cell = grid.getCell(col, surfRow - 1);
-          if (cell && cell.type === 'Sky') {
+        const col = grid.nestEntranceCol - 2 + Math.floor(Math.random() * 4);
+        const row = CONFIG.SKY_HEIGHT;
+        if (grid.isValid(col, row)) {
+          const cell = grid.getCell(col, row);
+          if (cell && (cell.type === 'NestAir' || cell.type === 'Sky')) {
             cell.type = 'Water';
             waterAccumulated++;
           }
@@ -451,6 +451,12 @@ export class OfflineProgression {
           for (const c of waterCols) {
             if (grid.cells[c][r].type !== 'Water') continue;
 
+            // If a water cell is on the surface (at or above CONFIG.SKY_HEIGHT) and not in the shaft columns, evaporate it
+            if (r <= CONFIG.SKY_HEIGHT && (c < grid.nestEntranceCol - 2 || c > grid.nestEntranceCol + 1)) {
+              grid.cells[c][r].type = 'Sky';
+              continue;
+            }
+
             const belowR = r + 1;
             if (belowR <= 250) {
               const belowCell = grid.cells[c][belowR];
@@ -493,6 +499,74 @@ export class OfflineProgression {
               }
             }
             if (movedLat) continue;
+          }
+        }
+      }
+    }
+
+    // 3.5. Granular food gravity updates offline
+    const foodSteps = Math.min(500, Math.floor(duration * 1));
+    if (foodSteps > 0) {
+      for (let step = 0; step < foodSteps; step++) {
+        for (let r = grid.rows - 2; r >= 0; r--) {
+          const foodCols: number[] = [];
+          for (let c = 0; c < grid.cols; c++) {
+            if (grid.cells[c][r].type === 'Food') {
+              foodCols.push(c);
+            }
+          }
+          if (foodCols.length === 0) continue;
+
+          for (let i = foodCols.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = foodCols[i];
+            foodCols[i] = foodCols[j];
+            foodCols[j] = temp;
+          }
+
+          for (const c of foodCols) {
+            if (grid.cells[c][r].type !== 'Food') continue;
+
+            const belowR = r + 1;
+            if (belowR < grid.rows) {
+              const belowCell = grid.cells[c][belowR];
+              if (belowCell.type === 'NestAir' || belowCell.type === 'Sky') {
+                belowCell.type = 'Food';
+                belowCell.foodAmount = grid.cells[c][r].foodAmount;
+                belowCell.foodType = grid.cells[c][r].foodType;
+                belowCell.isMoldy = grid.cells[c][r].isMoldy;
+
+                grid.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+                grid.cells[c][r].foodAmount = 0;
+                grid.cells[c][r].foodType = undefined;
+                grid.cells[c][r].isMoldy = undefined;
+                continue;
+              }
+            }
+
+            const diagOffsets = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+            let movedDiag = false;
+            for (const dc of diagOffsets) {
+              const tc = c + dc;
+              const tr = r + 1;
+              if (grid.isValid(tc, tr)) {
+                const diagCell = grid.cells[tc][tr];
+                if (diagCell.type === 'NestAir' || diagCell.type === 'Sky') {
+                  diagCell.type = 'Food';
+                  diagCell.foodAmount = grid.cells[c][r].foodAmount;
+                  diagCell.foodType = grid.cells[c][r].foodType;
+                  diagCell.isMoldy = grid.cells[c][r].isMoldy;
+
+                  grid.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+                  grid.cells[c][r].foodAmount = 0;
+                  grid.cells[c][r].foodType = undefined;
+                  grid.cells[c][r].isMoldy = undefined;
+                  movedDiag = true;
+                  break;
+                }
+              }
+            }
+            if (movedDiag) continue;
           }
         }
       }

@@ -205,6 +205,7 @@ export class SimulationEngine {
     // 1. Update grids & pheromones
     this.pheromones.update(this.grid, mult);
     this.grid.updateWater();
+    this.grid.updateFoodPhysics();
 
     // 2. Update foliage (growth, falling physics, periodic drops)
     this.foliageSystem.update(mult, this.grid, this.weather, (msg, cat) => this.colony.addLog(msg, cat));
@@ -604,20 +605,63 @@ export class SimulationEngine {
           }
         } else if (cell.type === 'Food') {
           ctx.save();
-          let foodColor = 'hsl(0, 80%, 48%)'; // Apple: red
+          const halfSize = CONFIG.CELL_SIZE / 2;
+          const cx = x + halfSize;
+          const cy = y + halfSize;
+
           if (cell.foodType === 'Foliage') {
-            foodColor = 'hsl(102, 55%, 35%)';
+            // Draw green foliage cell as a tiny leaf (rotated ellipse)
+            ctx.fillStyle = 'hsl(102, 55%, 35%)';
+            ctx.strokeStyle = 'hsl(102, 35%, 20%)';
+            ctx.lineWidth = 0.45;
+            ctx.translate(cx, cy);
+            ctx.rotate((cell.noiseVal * 2 - 1) * Math.PI);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, halfSize * 0.9, halfSize * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
           } else if (cell.foodType === 'Carcass') {
-            foodColor = 'hsl(280, 60%, 40%)';
+            // Draw purple carcass cell as an organic polygonal fragment
+            ctx.fillStyle = 'hsl(280, 60%, 40%)';
+            ctx.strokeStyle = 'hsl(280, 40%, 22%)';
+            ctx.lineWidth = 0.45;
+            ctx.beginPath();
+            const points = 5;
+            const r = halfSize * 0.85;
+            for (let i = 0; i < points; i++) {
+              const angle = (i / points) * Math.PI * 2 + cell.noiseVal;
+              const radius = r * (0.8 + (Math.sin(i * 1.7 + cell.noiseVal) * 0.2));
+              const px = cx + Math.cos(angle) * radius;
+              const py = cy + Math.sin(angle) * radius;
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            // Apple cell (red): Draw as a rounded shiny berry
+            ctx.fillStyle = 'hsl(0, 80%, 48%)';
+            ctx.strokeStyle = 'hsl(0, 50%, 25%)';
+            ctx.lineWidth = 0.45;
+            ctx.beginPath();
+            ctx.arc(cx, cy, halfSize * 0.9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Tiny glossy highlight (white dot)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.fillRect(cx - 0.7, cy - 0.7, 0.7, 0.7);
           }
-          ctx.fillStyle = foodColor;
-          ctx.fillRect(x + 0.5, y + 0.5, CONFIG.CELL_SIZE - 1, CONFIG.CELL_SIZE - 1);
 
           if (cell.isMoldy) {
-            ctx.fillStyle = 'rgba(52, 168, 83, 0.7)'; // soft green
-            ctx.fillRect(x + 0.5, y + 0.5, CONFIG.CELL_SIZE - 1, CONFIG.CELL_SIZE - 1);
+            ctx.fillStyle = 'rgba(52, 168, 83, 0.55)'; // soft green mold overlay
+            ctx.beginPath();
+            ctx.arc(cx, cy, halfSize * 0.95, 0, Math.PI * 2);
+            ctx.fill();
+            
             ctx.strokeStyle = 'hsl(120, 60%, 25%)';
-            ctx.lineWidth = 0.5;
+            ctx.lineWidth = 0.45;
             ctx.beginPath();
             ctx.moveTo(x + 1, y + 1);
             ctx.lineTo(x + 2, y + 0.5);
@@ -653,7 +697,7 @@ export class SimulationEngine {
       }
     });
 
-    // Draw Food Storage labels & visible growing leaf piles (Right chambers)
+    // Draw Food Storage labels (Right chambers)
     chambersDraw.foodStorages.forEach((storage, idx) => {
       ctx.fillStyle = 'hsla(102, 35%, 55%, 0.16)';
       ctx.font = 'bold 8px sans-serif';
@@ -661,36 +705,6 @@ export class SimulationEngine {
         ctx.fillText('ROYAL LARDER', storage.x, storage.y - 12);
       } else {
         ctx.fillText(`LARDER #${idx}`, storage.x, storage.y);
-      }
-
-      // Render actual leaf piles proportional to current food stockpile divided across larders
-      const share = this.colony.foodStockpile / chambersDraw.foodStorages.length;
-      const leafCount = Math.min(25, Math.ceil(share / 3.5)); // scales leaf density with food stock
-      
-      if (leafCount > 0) {
-        ctx.fillStyle = 'hsl(102, 55%, 35%)';
-        ctx.strokeStyle = 'hsl(102, 35%, 20%)';
-        ctx.lineWidth = 0.5;
-        
-        for (let i = 0; i < leafCount; i++) {
-          // Golden angle phyllotaxis distribution for a neat organic mound shape
-          const angle = (i * 2.39996) % (Math.PI * 2);
-          const radius = Math.sqrt(i) * 2.0;
-          const lx = storage.x + Math.cos(angle) * radius;
-          const ly = storage.y + Math.sin(angle) * radius + 4; // slight floor bias
-          
-          ctx.save();
-          ctx.translate(lx, ly);
-          ctx.rotate((i * 1.5) % (Math.PI * 2));
-          
-          // Draw little leaf
-          ctx.beginPath();
-          ctx.ellipse(0, 0, 2.5, 1.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          
-          ctx.restore();
-        }
       }
     });
     ctx.restore();
@@ -944,9 +958,7 @@ export class SimulationEngine {
         cargoColor = 'hsl(280, 60%, 40%)';
       }
       ctx.fillStyle = cargoColor;
-      ctx.beginPath();
-      ctx.arc(2.8, 0, 1.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(2.8 - 0.75, -0.75, 1.5, 1.5);
     } else if (ant.cargo === 'Dirt') {
       ctx.fillStyle = 'hsl(28, 45%, 28%)'; // dirt clump
       ctx.beginPath();

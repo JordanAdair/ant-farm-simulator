@@ -116,17 +116,38 @@ export function moveAndAvoidObstacles(
   const snapCol = Math.floor(entity.x / CONFIG.CELL_SIZE);
   const snapRow = Math.floor(entity.y / CONFIG.CELL_SIZE);
 
+  // Helper to check if a position is walkable for the entity's bounding box (radius 0.8px)
+  const isPosWalkable = (x: number, y: number): boolean => {
+    const radius = 0.8;
+    const offsets = [
+      [0, 0],
+      [-radius, -radius],
+      [radius, -radius],
+      [-radius, radius],
+      [radius, radius],
+    ];
+    for (const [dx, dy] of offsets) {
+      const col = Math.floor((x + dx) / CONFIG.CELL_SIZE);
+      const row = Math.floor((y + dy) / CONFIG.CELL_SIZE);
+      if (!grid.isWalkable(col, row)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   // 1. Gravity on the surface (Only for cells that are Sky or Food)
   if (grid.isValid(snapCol, snapRow)) {
     const currentCell = grid.getCell(snapCol, snapRow);
     if (currentCell && (currentCell.type === 'Sky' || currentCell.type === 'Food')) {
       // Check for solid support directly underneath or just 1 cell adjacent (3x2 region)
-      // This gives ants basic wall-clinging without letting them float across 4-cell wide holes
+      // Treat Dirt, Rock, and Food as solid support so ants can walk on top of/through food piles
       let hasSupport = false;
       for (let dc = -1; dc <= 1; dc++) {
         for (let dr = 0; dr <= 1; dr++) {
           if (grid.isValid(snapCol + dc, snapRow + dr)) {
-            if (!grid.isWalkable(snapCol + dc, snapRow + dr)) {
+            const cell = grid.getCell(snapCol + dc, snapRow + dr);
+            if (cell && (cell.type === 'Dirt' || cell.type === 'Rock' || cell.type === 'Food')) {
               hasSupport = true;
               break;
             }
@@ -138,7 +159,21 @@ export function moveAndAvoidObstacles(
       // Only apply gravity if the ant has no physical support nearby (i.e. not climbing a wall, slope, or standing on a block)
       if (!hasSupport) {
         // Fall down due to gravity (velocity scales with game speed)
-        entity.y += 1.5 * (speed / CONFIG.ANT_SPEED);
+        const fallAmount = 1.5 * (speed / CONFIG.ANT_SPEED);
+        const targetY = entity.y + fallAmount;
+        if (isPosWalkable(entity.x, targetY)) {
+          entity.y = targetY;
+        } else {
+          // Sub-step (binary search) to land exactly on the ground without clipping
+          let step = fallAmount;
+          while (step > 0.1) {
+            step *= 0.5;
+            if (isPosWalkable(entity.x, entity.y + step)) {
+              entity.y += step;
+              break;
+            }
+          }
+        }
       }
     }
   }
@@ -182,24 +217,30 @@ export function moveAndAvoidObstacles(
   let nextX = entity.x + Math.cos(entity.angle) * speed;
   let nextY = entity.y + Math.sin(entity.angle) * speed;
 
-  const cushion = 1.5;
-  const lookAheadX = nextX + Math.cos(entity.angle) * cushion;
-  const lookAheadY = nextY + Math.sin(entity.angle) * cushion;
-  const nextCol = Math.floor(lookAheadX / CONFIG.CELL_SIZE);
-  const nextRow = Math.floor(lookAheadY / CONFIG.CELL_SIZE);
-
-  if (grid.isWalkable(nextCol, nextRow)) {
+  if (isPosWalkable(nextX, nextY)) {
     entity.x = nextX;
     entity.y = nextY;
   } else {
     // Collision detected! Try sliding horizontally or vertically.
-    const canSlideHorizontal = grid.isWalkable(nextCol, snapRow);
-    const canSlideVertical = grid.isWalkable(snapCol, nextRow);
+    const slideDirX = Math.cos(entity.angle) >= 0 ? 1 : -1;
+    const slideX = entity.x + slideDirX * speed;
+
+    let slideDirY = Math.sin(entity.angle) > 0 ? 1 : -1;
+    if (Math.abs(Math.sin(entity.angle)) < 0.1) {
+      if (snapRow < CONFIG.SKY_HEIGHT + 5) {
+        slideDirY = -1; // climb up
+      } else {
+        slideDirY = Math.random() < 0.5 ? 1 : -1;
+      }
+    }
+    const slideY = entity.y + slideDirY * speed;
+
+    const canSlideHorizontal = isPosWalkable(slideX, entity.y);
+    const canSlideVertical = isPosWalkable(entity.x, slideY);
 
     const slideHorizontal = () => {
-      const slideDir = Math.cos(entity.angle) >= 0 ? 1 : -1;
-      entity.x += slideDir * speed;
-      const targetAngle = slideDir === 1 ? 0 : Math.PI;
+      entity.x = slideX;
+      const targetAngle = slideDirX === 1 ? 0 : Math.PI;
       steerTowardsAngle(entity, targetAngle, 0.2);
       entity.collisionCooldown = 6;
       entity.collisions++;
@@ -207,16 +248,8 @@ export function moveAndAvoidObstacles(
     };
 
     const slideVertical = () => {
-      let slideDir = Math.sin(entity.angle) > 0 ? 1 : -1;
-      if (Math.abs(Math.sin(entity.angle)) < 0.1) {
-        if (snapRow < CONFIG.SKY_HEIGHT + 5) {
-          slideDir = -1; // climb up
-        } else {
-          slideDir = Math.random() < 0.5 ? 1 : -1;
-        }
-      }
-      entity.y += slideDir * speed;
-      const targetAngle = slideDir === 1 ? Math.PI / 2 : -Math.PI / 2;
+      entity.y = slideY;
+      const targetAngle = slideDirY === 1 ? Math.PI / 2 : -Math.PI / 2;
       steerTowardsAngle(entity, targetAngle, 0.2);
       entity.collisionCooldown = 6;
       entity.collisions++;
@@ -242,16 +275,14 @@ export function moveAndAvoidObstacles(
 
       for (const da of angleScans) {
         const scanAngle = entity.angle + da;
-        const checkX = entity.x + Math.cos(scanAngle) * CONFIG.CELL_SIZE;
-        const checkY = entity.y + Math.sin(scanAngle) * CONFIG.CELL_SIZE;
-        const checkCol = Math.floor(checkX / CONFIG.CELL_SIZE);
-        const checkRow = Math.floor(checkY / CONFIG.CELL_SIZE);
+        const checkX = entity.x + Math.cos(scanAngle) * speed;
+        const checkY = entity.y + Math.sin(scanAngle) * speed;
 
-        if (grid.isWalkable(checkCol, checkRow)) {
-          entity.angle = scanAngle;
+        if (isPosWalkable(checkX, checkY)) {
+          entity.angle = normalizeAngle(scanAngle);
           // Move forward by speed
-          entity.x += Math.cos(scanAngle) * speed;
-          entity.y += Math.sin(scanAngle) * speed;
+          entity.x = checkX;
+          entity.y = checkY;
           entity.collisionCooldown = 12; // 12 updates cooldown
           foundWalkable = true;
           entity.collisions++;
@@ -262,7 +293,7 @@ export function moveAndAvoidObstacles(
 
       if (!foundWalkable) {
         // Complete turnaround
-        entity.angle += Math.PI;
+        entity.angle = normalizeAngle(entity.angle + Math.PI);
         entity.collisionCooldown = 15;
         entity.collisions++;
         entity.collisionTimer = 20;

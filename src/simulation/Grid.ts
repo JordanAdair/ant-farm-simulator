@@ -368,6 +368,12 @@ export class WorldGrid {
         // Double check type in case it was swapped by a lateral move in the same row
         if (this.cells[c][r].type !== 'Water') continue;
 
+        // If a water cell is on the surface (above CONFIG.SKY_HEIGHT) and not in the shaft columns, evaporate it
+        if (r < CONFIG.SKY_HEIGHT && (c < this.nestEntranceCol - 2 || c > this.nestEntranceCol + 1)) {
+          this.cells[c][r].type = 'Sky';
+          continue;
+        }
+
         // 1. Try directly below
         const belowR = r + 1;
         if (belowR < this.rows) {
@@ -413,6 +419,74 @@ export class WorldGrid {
           }
         }
         if (movedLat) continue;
+      }
+    }
+  }
+
+  // Cellular food gravity simulation
+  public updateFoodPhysics() {
+    for (let r = this.rows - 2; r >= 0; r--) {
+      const foodCols: number[] = [];
+      for (let c = 0; c < this.cols; c++) {
+        if (this.cells[c][r].type === 'Food') {
+          foodCols.push(c);
+        }
+      }
+      if (foodCols.length === 0) continue;
+
+      // Shuffle columns to prevent directional falling bias
+      for (let i = foodCols.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = foodCols[i];
+        foodCols[i] = foodCols[j];
+        foodCols[j] = temp;
+      }
+
+      for (const c of foodCols) {
+        if (this.cells[c][r].type !== 'Food') continue;
+
+        // 1. Try directly below
+        const belowR = r + 1;
+        if (belowR < this.rows) {
+          const belowCell = this.cells[c][belowR];
+          if (belowCell.type === 'NestAir' || belowCell.type === 'Sky') {
+            belowCell.type = 'Food';
+            belowCell.foodAmount = this.cells[c][r].foodAmount;
+            belowCell.foodType = this.cells[c][r].foodType;
+            belowCell.isMoldy = this.cells[c][r].isMoldy;
+
+            this.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+            this.cells[c][r].foodAmount = 0;
+            this.cells[c][r].foodType = undefined;
+            this.cells[c][r].isMoldy = undefined;
+            continue;
+          }
+        }
+
+        // 2. Try diagonal below (left or right randomly) to slide down slopes
+        const diagOffsets = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+        let movedDiag = false;
+        for (const dc of diagOffsets) {
+          const tc = c + dc;
+          const tr = r + 1;
+          if (this.isValid(tc, tr)) {
+            const diagCell = this.cells[tc][tr];
+            if (diagCell.type === 'NestAir' || diagCell.type === 'Sky') {
+              diagCell.type = 'Food';
+              diagCell.foodAmount = this.cells[c][r].foodAmount;
+              diagCell.foodType = this.cells[c][r].foodType;
+              diagCell.isMoldy = this.cells[c][r].isMoldy;
+
+              this.cells[c][r].type = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir';
+              this.cells[c][r].foodAmount = 0;
+              this.cells[c][r].foodType = undefined;
+              this.cells[c][r].isMoldy = undefined;
+              movedDiag = true;
+              break;
+            }
+          }
+        }
+        if (movedDiag) continue;
       }
     }
   }
