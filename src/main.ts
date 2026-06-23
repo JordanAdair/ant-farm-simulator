@@ -187,7 +187,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const offlineFoodConsumed = document.getElementById('offline-food-consumed') as HTMLElement;
   const offlineAntsBorn = document.getElementById('offline-ants-born') as HTMLElement;
   const offlineDirtDug = document.getElementById('offline-dirt-dug') as HTMLElement;
+  const offlineFoodDecayed = document.getElementById('offline-food-decayed') as HTMLElement;
+  const offlineBroodLosses = document.getElementById('offline-brood-losses') as HTMLElement;
+  const offlineTunnelsCleared = document.getElementById('offline-tunnels-cleared') as HTMLElement;
+  const offlineLogsContainer = document.getElementById('offline-logs-container') as HTMLElement;
+  const offlineLogsList = document.getElementById('offline-logs-list') as HTMLElement;
   const closeOfflineBtn = document.getElementById('close-offline-btn') as HTMLButtonElement;
+
+  // Game Over Elements
+  const gameOverOverlay = document.getElementById('game-over-overlay') as HTMLElement;
+  const gameOverCauseVal = document.getElementById('game-over-cause-val') as HTMLElement;
+  const gameOverDays = document.getElementById('game-over-days') as HTMLElement;
+  const gameOverMaxPop = document.getElementById('game-over-max-pop') as HTMLElement;
+  const gameOverGenerations = document.getElementById('game-over-generations') as HTMLElement;
+  const gameOverVolume = document.getElementById('game-over-volume') as HTMLElement;
+  const restartSimBtn = document.getElementById('restart-sim-btn') as HTMLButtonElement;
 
   // 1. Setup save state triggers
   let isTabActive = document.visibilityState === 'visible';
@@ -217,6 +231,66 @@ window.addEventListener('DOMContentLoaded', () => {
       OfflineProgression.saveState(engine);
     }
   };
+
+  engine.onGameOverTriggered = (reason: string) => {
+    if (gameOverOverlay && gameOverOverlay.classList.contains('hidden')) {
+      gameOverOverlay.classList.remove('hidden');
+      if (gameOverCauseVal) gameOverCauseVal.textContent = reason;
+      
+      const stats = engine.colony.getStats(engine.grid);
+      if (gameOverDays) gameOverDays.textContent = engine.environment.dayCount.toString();
+      if (gameOverMaxPop) gameOverMaxPop.textContent = engine.colony.maxPopulation.toString();
+      
+      let maxGen = 1;
+      engine.colony.ants.forEach(a => {
+        if (a.generation > maxGen) maxGen = a.generation;
+      });
+      if (gameOverGenerations) gameOverGenerations.textContent = maxGen.toString();
+      
+      const volumeCm = Math.floor(stats.nestVolume * 0.25);
+      if (gameOverVolume) gameOverVolume.textContent = `${volumeCm} cm³`;
+      
+      engine.speedMultiplier = 0;
+      speedButtons.forEach(b => {
+        if (b.getAttribute('data-speed') === '0') {
+          b.classList.add('active');
+        } else {
+          b.classList.remove('active');
+        }
+      });
+    }
+  };
+
+  const triggerRestart = () => {
+    selectedFruit = null;
+    selectedTree = null;
+    applePopup.classList.add('hidden');
+    OfflineProgression.clearSave();
+    engine.grid = new WorldGrid();
+    engine.pheromones.clear();
+    engine.colony.reset(engine.grid.nestEntranceCol);
+    engine.totalDirtDugGlobal = 0;
+    engine.telemetryTracker.setHistory([]);
+    
+    engine.dayCount = 1;
+    engine.hour = 8;
+    engine.minute = 0;
+    engine.minuteFraction = 0;
+    engine.weather = 'Sunny';
+    engine.weatherTimer = 0;
+    engine.weatherQueue = [];
+    engine.refillWeatherQueue();
+    const current = engine.weatherQueue.shift()!;
+    engine.weather = current.type;
+    engine.weatherTargetDuration = current.durationFrames;
+
+    OfflineProgression.saveState(engine);
+    location.reload();
+  };
+
+  if (restartSimBtn) {
+    restartSimBtn.addEventListener('click', triggerRestart);
+  }
   
   // Save when leaving tab
   window.addEventListener('pagehide', () => {
@@ -654,6 +728,31 @@ window.addEventListener('DOMContentLoaded', () => {
     offlineFoodConsumed.textContent = `-${res.foodConsumed}`;
     offlineAntsBorn.textContent = `+${res.antsBorn}`;
     offlineDirtDug.textContent = `+${res.dirtDug} cells`;
+
+    if (offlineFoodDecayed) offlineFoodDecayed.textContent = `-${res.foodDecayed ?? 0}`;
+    if (offlineBroodLosses) offlineBroodLosses.textContent = `-${res.broodLosses ?? 0}`;
+    if (offlineTunnelsCleared) offlineTunnelsCleared.textContent = `${res.dirtCleared ?? 0} cells`;
+
+    if (offlineLogsContainer && offlineLogsList) {
+      const logs = res.threatLogs || [];
+      if (logs.length > 0) {
+        offlineLogsContainer.classList.remove('hidden');
+        offlineLogsList.innerHTML = '';
+        logs.forEach(log => {
+          const item = document.createElement('div');
+          item.className = 'offline-log-item';
+          if (log.includes('lost') || log.includes('died') || log.includes('drowned') || log.includes('mite') || log.includes('killed')) {
+            item.classList.add('danger');
+          } else if (log.includes('cave-in') || log.includes('decay') || log.includes('flooded')) {
+            item.classList.add('warning');
+          }
+          item.textContent = log;
+          offlineLogsList.appendChild(item);
+        });
+      } else {
+        offlineLogsContainer.classList.add('hidden');
+      }
+    }
 
     offlineModal.classList.remove('hidden');
   }

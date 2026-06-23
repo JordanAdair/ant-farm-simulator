@@ -65,10 +65,26 @@ export class SimulationEngine {
   
   // Storage callback
   public onStateSaveNeeded: () => void = () => {};
+  public onGameOverTriggered: (reason: string) => void = () => {};
 
   public debrisParticles: { x: number; y: number; vx: number; vy: number; color: string; life: number }[] = [];
+  public bubbleParticles: { x: number; y: number; vx: number; vy: number; radius: number; life: number }[] = [];
 
   public spawnDebris(x: number, y: number, color: string, count: number = 4) {
+    if (color === 'rgba(156, 180, 215, 0.65)') {
+      for (let i = 0; i < count; i++) {
+        this.bubbleParticles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: -0.6 - Math.random() * 0.8, // float up
+          radius: 1 + Math.random() * 1.2,
+          life: 1.0
+        });
+      }
+      return;
+    }
+
     for (let i = 0; i < count; i++) {
       this.debrisParticles.push({
         x,
@@ -186,6 +202,7 @@ export class SimulationEngine {
 
     // 1. Update grids & pheromones
     this.pheromones.update(this.grid, mult);
+    this.grid.updateWater();
 
     // 2. Update foliage (growth, falling physics, periodic drops)
     this.foliageSystem.update(mult, this.grid, this.weather, (msg, cat) => this.colony.addLog(msg, cat));
@@ -244,6 +261,9 @@ export class SimulationEngine {
       } else if (ant.energy <= 0) {
         died = true;
         deathReason = 'starvation';
+      } else if (ant.health <= 0) {
+        died = true;
+        deathReason = 'drowning';
       } else {
         // Tiny chance of accident on the job (reduced 10x to 1 in 1,000,000 frames base)
         let accidentChance = 0.0000005 * mult;
@@ -340,6 +360,22 @@ export class SimulationEngine {
       if (p.life <= 0) {
         this.debrisParticles.splice(i, 1);
       }
+    }
+
+    // Update bubble particles
+    for (let i = this.bubbleParticles.length - 1; i >= 0; i--) {
+      const p = this.bubbleParticles[i];
+      p.x += p.vx * mult;
+      p.y += p.vy * mult;
+      p.life -= 0.02 * mult;
+      if (p.life <= 0) {
+        this.bubbleParticles.splice(i, 1);
+      }
+    }
+
+    // Check if Queen is dead to trigger Game Over
+    if (this.colony.queen.isDead) {
+      this.onGameOverTriggered(this.colony.queen.deathReason || 'unknown');
     }
 
     // Update back the modified food stockpile value
@@ -540,6 +576,24 @@ export class SimulationEngine {
           }
           ctx.fillStyle = foodColor;
           ctx.fillRect(x + 0.5, y + 0.5, CONFIG.CELL_SIZE - 1, CONFIG.CELL_SIZE - 1);
+
+          if (cell.isMoldy) {
+            ctx.fillStyle = 'rgba(52, 168, 83, 0.7)'; // soft green
+            ctx.fillRect(x + 0.5, y + 0.5, CONFIG.CELL_SIZE - 1, CONFIG.CELL_SIZE - 1);
+            ctx.strokeStyle = 'hsl(120, 60%, 25%)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + 1, y + 1);
+            ctx.lineTo(x + 2, y + 0.5);
+            ctx.moveTo(x + 3, y + 2);
+            ctx.lineTo(x + 3.5, y + 3);
+            ctx.stroke();
+          }
+          ctx.restore();
+        } else if (cell.type === 'Water') {
+          ctx.save();
+          ctx.fillStyle = `hsla(210, 80%, 45%, ${0.6 + cell.noiseVal * 0.25})`;
+          ctx.fillRect(x, y, CONFIG.CELL_SIZE, CONFIG.CELL_SIZE);
           ctx.restore();
         }
       }
@@ -705,6 +759,20 @@ export class SimulationEngine {
         ctx.fillStyle = p.color;
         ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
         ctx.fillRect(p.x - 0.7, p.y - 0.7, 1.4, 1.4);
+      });
+      ctx.restore();
+    }
+
+    // Draw bubble particles
+    if (this.bubbleParticles.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(156, 180, 215, 0.75)';
+      ctx.lineWidth = 0.5;
+      this.bubbleParticles.forEach(p => {
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.stroke();
       });
       ctx.restore();
     }

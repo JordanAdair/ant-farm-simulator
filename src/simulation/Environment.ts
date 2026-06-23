@@ -195,6 +195,32 @@ export class Environment {
       if (grid && Math.random() < 0.08 * mult) {
         grid.erodeMounds();
       }
+      // Rain surface water spawning
+      if (grid && Math.random() < 0.25 * mult) {
+        const col = Math.floor(Math.random() * grid.cols);
+        const surfRow = grid.getSurfaceRow(col);
+        if (surfRow > 0) {
+          const cell = grid.getCell(col, surfRow - 1);
+          if (cell && cell.type === 'Sky') {
+            cell.type = 'Water';
+          }
+        }
+      }
+    } else if (this.weather === 'Sunny') {
+      // Sunny water evaporation from top down
+      if (grid && Math.random() < 0.35 * mult) {
+        const rate = CONFIG.WATER_EVAPORATION_RATE || 2;
+        for (let i = 0; i < rate; i++) {
+          const col = Math.floor(Math.random() * grid.cols);
+          for (let r = 0; r < grid.rows; r++) {
+            const cell = grid.getCell(col, r);
+            if (cell && cell.type === 'Water') {
+              grid.setCellType(col, r, r < CONFIG.SKY_HEIGHT ? 'Sky' : 'NestAir');
+              break;
+            }
+          }
+        }
+      }
     }
 
     if (this.weatherTimer >= this.weatherTargetDuration) {

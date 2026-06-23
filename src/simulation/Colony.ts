@@ -9,6 +9,7 @@ import { findPath } from './Pathfinder';
 export class ColonyManager {
   private _grid?: WorldGrid;
   private _fallbackFoodStockpile: number = 200;
+  public maxPopulation: number = 0;
 
   public get grid(): WorldGrid | undefined {
     return this._grid;
@@ -28,7 +29,7 @@ export class ColonyManager {
   }
 
   public get foodStockpile(): number {
-    if (!this._grid || typeof this._grid.getCell !== 'function') {
+    if (!this._grid || !(this._grid instanceof WorldGrid)) {
       return this._fallbackFoodStockpile;
     }
     const larders = this.getLarderBoxes(this._grid);
@@ -48,7 +49,7 @@ export class ColonyManager {
 
   public set foodStockpile(value: number) {
     this._fallbackFoodStockpile = value;
-    if (!this._grid || typeof this._grid.getCell !== 'function') return;
+    if (!this._grid || !(this._grid instanceof WorldGrid)) return;
 
     const current = this.foodStockpile;
     const diff = value - current;
@@ -131,6 +132,11 @@ export class ColonyManager {
     currentNursery?: Position;
     path?: Position[];
     isDead?: boolean;
+    age: number;
+    maxAge: number;
+    submergedTime: number;
+    health: number;
+    deathReason?: string;
   };
   public logs: LogEntry[] = [];
   public nextAntNum: number = 1; // counter for numbering ants
@@ -152,7 +158,13 @@ export class ColonyManager {
       restTimer: 0,
       currentNursery: { x: startX - 40, y: startY + 4 },
       path: [],
+      age: 0,
+      maxAge: CONFIG.QUEEN_MAX_AGE,
+      submergedTime: 0,
+      health: 100,
     };
+
+    this.maxPopulation = 8;
 
     // Generate procedural nest plan
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
@@ -200,18 +212,56 @@ export class ColonyManager {
 
   public update(speedMultiplier: number, grid?: WorldGrid) {
     const activeGrid = grid || new WorldGrid();
+    if (activeGrid && typeof activeGrid.getCell !== 'function') {
+      (activeGrid as any).getCell = (c: number, r: number) => {
+        return { type: 'NestAir', foodAmount: 0, noiseVal: 0 };
+      };
+    }
     this.grid = activeGrid;
     const dt = 1 * speedMultiplier;
 
     // 1. Queen egg laying and energy
-    // Deplete Queen energy over time (rate: 100 energy lost in 24 simulated hours, which is 21600 frames at 1x speed)
+    // Track max population
+    const currentPopulation = this.ants.length;
+    if (currentPopulation > this.maxPopulation) {
+      this.maxPopulation = currentPopulation;
+    }
+
     if (!this.queen.isDead) {
+      // Age Queen
+      this.queen.age += (1 / 7200) * dt;
+
+      const qCol = Math.floor(this.queen.x / CONFIG.CELL_SIZE);
+      const qRow = Math.floor(this.queen.y / CONFIG.CELL_SIZE);
+      const qCell = (activeGrid && typeof activeGrid.getCell === 'function') ? activeGrid.getCell(qCol, qRow) : null;
+      const qSubmerged = qCell && qCell.type === 'Water';
+
+      if (qSubmerged) {
+        this.queen.submergedTime += (1 / 60) * dt;
+        if (this.queen.submergedTime > 5.0) {
+          this.queen.health -= 2 * dt;
+        }
+      } else {
+        this.queen.submergedTime = 0;
+        this.queen.health = Math.min(100, this.queen.health + 0.5 * dt);
+      }
+
       const queenEnergyLoss = (100 / 21600) * dt;
       this.queen.energy = Math.max(0, this.queen.energy - queenEnergyLoss);
 
-      if (this.queen.energy <= 0) {
+      // Check deaths
+      if (this.queen.age >= this.queen.maxAge) {
         this.queen.isDead = true;
+        this.queen.deathReason = 'old age';
+        this.addLog('The Queen has died of old age! Colony Collapse is imminent.', 'deaths');
+      } else if (this.queen.energy <= 0) {
+        this.queen.isDead = true;
+        this.queen.deathReason = 'starvation';
         this.addLog('The Queen has died of starvation! Colony Collapse is imminent.', 'deaths');
+      } else if (this.queen.health <= 0) {
+        this.queen.isDead = true;
+        this.queen.deathReason = 'drowning';
+        this.addLog('The Queen has drowned! Colony Collapse is imminent.', 'deaths');
       }
     }
 
@@ -261,14 +311,50 @@ export class ColonyManager {
       this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
     }
 
+    // Larder mold decay logic
+    const larders = this.getLarderBoxes(activeGrid);
+    let moldLogs = false;
+    for (const box of larders) {
+      const flooded = this.isLarderFlooded(activeGrid, box);
+      for (let c = box.minCol; c <= box.maxCol; c++) {
+        for (let r = box.minRow; r <= box.maxRow; r++) {
+          const cell = activeGrid.getCell(c, r);
+          if (cell && cell.type === 'Food') {
+            if (flooded && !cell.isMoldy) {
+              cell.isMoldy = true;
+              moldLogs = true;
+            }
+            if (cell.isMoldy) {
+              cell.foodAmount -= 0.005 * dt;
+              if (cell.foodAmount <= 0) {
+                cell.type = 'NestAir';
+                cell.foodAmount = 0;
+                cell.foodType = undefined;
+                cell.isMoldy = false;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (moldLogs) {
+      this.addLog('Flooded larder detected! Food stockpiles are decaying from mold.', 'system');
+    }
+
     // Queen motion
     if (!this.queen.isDead) {
+      const qCol = Math.floor(this.queen.x / CONFIG.CELL_SIZE);
+      const qRow = Math.floor(this.queen.y / CONFIG.CELL_SIZE);
+      const qCell = activeGrid.getCell(qCol, qRow);
+      const qSubmerged = qCell && qCell.type === 'Water';
+      const qSpeedMult = qSubmerged ? 0.4 : 1.0;
+
       if (this.queen.path && this.queen.path.length > 0) {
         const target = this.queen.path[0];
         const dx = target.x - this.queen.x;
         const dy = target.y - this.queen.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const queenSpeed = 0.5 * speedMultiplier; // Queen moves regally and steadily
+        const queenSpeed = 0.5 * speedMultiplier * qSpeedMult; // Queen moves regally and steadily
         if (dist <= queenSpeed) {
           this.queen.x = target.x;
           this.queen.y = target.y;
@@ -294,7 +380,7 @@ export class ColonyManager {
         if (this.queen.restTimer > 0) {
           this.queen.restTimer -= dt;
         } else {
-          const speed = 0.12 * speedMultiplier; // Queen moves regally and slowly
+          const speed = 0.12 * speedMultiplier * qSpeedMult; // Queen moves regally and slowly
 
           if (this.queen.targetX === undefined) {
             this.queen.targetX = this.queen.x;
@@ -579,7 +665,13 @@ export class ColonyManager {
       restTimer: 0,
       currentNursery: { x: startX - 40, y: startY + 4 },
       path: [],
+      age: 0,
+      maxAge: CONFIG.QUEEN_MAX_AGE,
+      submergedTime: 0,
+      health: 100,
     };
+
+    this.maxPopulation = 8;
     
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
     this.spawnInitialColony(startX, startY);
@@ -712,5 +804,17 @@ export class ColonyManager {
       }
     }
     return closest;
+  }
+
+  public isLarderFlooded(grid: WorldGrid, box: LarderBox): boolean {
+    for (let c = box.minCol; c <= box.maxCol; c++) {
+      for (let r = box.minRow; r <= box.maxRow; r++) {
+        const cell = grid.getCell(c, r);
+        if (cell && cell.type === 'Water') {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }
