@@ -3,6 +3,7 @@ import { OfflineProgression } from './OfflineProgression';
 import { WorldGrid } from './Grid';
 import { ColonyManager } from './Colony';
 import { Environment } from './Environment';
+import { Threat } from './Threat';
 
 describe('Offline Progression Physics & Threats', () => {
   it('should spawn surface water cells during rainy weather offline and evaporate them in sunny weather', () => {
@@ -231,5 +232,100 @@ describe('Offline Progression Physics & Threats', () => {
     } finally {
       Math.random = originalRandom;
     }
+  });
+
+  it('should track maxGenerationReached when new ants hatch', () => {
+    const colony = new ColonyManager(200);
+    expect(colony.maxGenerationReached).toBe(1);
+
+    // Force hatch an ant
+    (colony as any).hatchAnt(colony.queen.x, colony.queen.y);
+    expect(colony.maxGenerationReached).toBe(2);
+
+    // Reset should set it back to 1
+    colony.reset(200);
+    expect(colony.maxGenerationReached).toBe(1);
+  });
+
+  it('should run CA water updates (trickling) even during sunny weather offline', () => {
+    const grid = new WorldGrid();
+    const colony = new ColonyManager(200);
+    const env = new Environment();
+    env.weather = 'Sunny';
+    env.weatherTimer = 0;
+    env.weatherTargetDuration = 10000;
+    env.weatherQueue = [];
+    env.refillWeatherQueue = () => {
+      while (env.weatherQueue.length < 5) {
+        env.weatherQueue.push({ type: 'Sunny', durationFrames: 10000 });
+      }
+    };
+
+    // Place water cell high up in the nest link/air
+    const col = 200;
+    const row = 100;
+    grid.setCellType(col, row, 'Water');
+    grid.setCellType(col, row + 1, 'NestAir');
+
+    const mockEngine = {
+      grid,
+      colony,
+      environment: env,
+      totalDirtDugGlobal: 0,
+      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
+      initializeFoliage: () => {},
+    } as any;
+
+    const originalRandom = Math.random;
+    try {
+      Math.random = () => 0.1;
+
+      // Run calculations for 30 seconds of sunny weather
+      (OfflineProgression as any).runOfflineCalculations(mockEngine, 30);
+
+      // Expect water cell to have trickled down from row 100
+      const cellAbove = grid.getCell(col, row);
+      expect(cellAbove?.type).not.toBe('Water');
+      
+      let foundWaterBelow = false;
+      for (let c = 0; c < grid.cols; c++) {
+        for (let r = row + 1; r < grid.rows; r++) {
+          if (grid.getCell(c, r)?.type === 'Water') {
+            foundWaterBelow = true;
+            break;
+          }
+        }
+        if (foundWaterBelow) break;
+      }
+      expect(foundWaterBelow).toBe(true);
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+
+  it('should log Queen death by predator attack and preserve deathReason', () => {
+    const colony = new ColonyManager(200);
+    const grid = new WorldGrid();
+    const threat = new Threat('t1', 'Spider', colony.queen.x, colony.queen.y);
+    
+    let logAdded = false;
+    let logCategory = '';
+    const mockAddLog = (msg: string, cat: string) => {
+      logAdded = true;
+      logCategory = cat;
+      colony.addLog(msg, cat as any);
+    };
+
+    while (!colony.queen.isDead) {
+      (threat as any).attackTarget(colony.queen, [], 1, mockAddLog);
+    }
+
+    expect(colony.queen.isDead).toBe(true);
+    expect(colony.queen.deathReason).toBe('predator attack');
+    expect(logAdded).toBe(true);
+    expect(logCategory).toBe('deaths');
+
+    colony.update(1, grid);
+    expect(colony.queen.deathReason).toBe('predator attack');
   });
 });

@@ -92,6 +92,7 @@ export class OfflineProgression {
         timestamp: Date.now(),
         excavationPlan: engine.colony.excavationPlan,
         maxPopulation: engine.colony.maxPopulation,
+        maxGenerationReached: engine.colony.maxGenerationReached,
         queen: {
           x: engine.colony.queen.x,
           y: engine.colony.queen.y,
@@ -181,6 +182,7 @@ export class OfflineProgression {
       engine.colony.foodStockpile = state.foodStockpile || 50;
       engine.totalDirtDugGlobal = state.totalDirtDug || 0;
       engine.colony.maxPopulation = state.maxPopulation ?? 8;
+      engine.colony.maxGenerationReached = state.maxGenerationReached ?? 1;
       engine.colony.queen = state.queen
         ? {
             ...state.queen,
@@ -427,8 +429,8 @@ export class OfflineProgression {
     }
 
     // 3. Localized CA water updates offline
-    if (rainySeconds > 0) {
-      const caSteps = Math.min(1000, Math.floor(rainySeconds * 5));
+    const caSteps = Math.min(1000, Math.floor(duration * 2));
+    if (caSteps > 0) {
       for (let step = 0; step < caSteps; step++) {
         for (let r = 250; r >= 80; r--) {
           const waterCols: number[] = [];
@@ -775,28 +777,42 @@ export class OfflineProgression {
     // 12. Queen laying eggs / Brood progression offline
     let eggsLaid = 0;
     let antsBorn = 0;
-    const eggLayInterval = CONFIG.QUEEN_EGG_INTERVAL;
     const stepSizeSeconds = Math.min(duration, 300);
     const stepsCount = Math.floor(duration / stepSizeSeconds);
 
     if (!colony.queen.isDead) {
+      let localEggTimer = colony.queen.eggTimer;
       for (let s = 0; s < stepsCount; s++) {
-        if (colony.foodStockpile >= 10 && Math.random() < (stepSizeSeconds / eggLayInterval)) {
-          colony.foodStockpile -= 10;
-          eggsLaid++;
-          
-          const rx = colony.queen.x + (Math.random() - 0.5) * 40;
-          const ry = colony.queen.y + 12;
-          colony.broodList.push({
-            id: `brood-${Math.random().toString(36).substr(2, 9)}`,
-            type: 'Egg',
-            x: rx,
-            y: ry,
-            progress: 0,
-            needsFood: false,
-            beingCarried: false,
-          });
+        let remainingSeconds = stepSizeSeconds;
+        while (remainingSeconds > 0) {
+          if (localEggTimer <= 0) {
+            if (colony.foodStockpile >= 10) {
+              colony.foodStockpile -= 10;
+              eggsLaid++;
+              
+              const rx = colony.queen.x + (Math.random() - 0.5) * 40;
+              const ry = colony.queen.y + 12;
+              colony.broodList.push({
+                id: `brood-${Math.random().toString(36).substr(2, 9)}`,
+                type: 'Egg',
+                x: rx,
+                y: ry,
+                progress: 0,
+                needsFood: false,
+                beingCarried: false,
+              });
+              localEggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20;
+            } else {
+              localEggTimer = 0;
+              break; // out of food, stop trying to lay eggs in this step
+            }
+          }
+          const dtToNextEgg = Math.max(1, localEggTimer);
+          const elapsed = Math.min(remainingSeconds, dtToNextEgg);
+          localEggTimer -= elapsed;
+          remainingSeconds -= elapsed;
         }
+        colony.queen.eggTimer = localEggTimer;
 
         for (let i = colony.broodList.length - 1; i >= 0; i--) {
           const b = colony.broodList[i];

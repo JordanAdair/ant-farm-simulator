@@ -242,11 +242,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (gameOverDays) gameOverDays.textContent = engine.environment.dayCount.toString();
       if (gameOverMaxPop) gameOverMaxPop.textContent = engine.colony.maxPopulation.toString();
       
-      let maxGen = 1;
-      engine.colony.ants.forEach(a => {
-        if (a.generation > maxGen) maxGen = a.generation;
-      });
-      if (gameOverGenerations) gameOverGenerations.textContent = maxGen.toString();
+      if (gameOverGenerations) gameOverGenerations.textContent = engine.colony.maxGenerationReached.toString();
       
       const volumeCm = Math.floor(stats.nestVolume * 0.25);
       if (gameOverVolume) gameOverVolume.textContent = `${volumeCm} cm³`;
