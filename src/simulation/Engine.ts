@@ -8,6 +8,7 @@ import { TelemetryTracker } from './Telemetry';
 import { Environment } from './Environment';
 import { FoliageSystem } from './Foliage';
 import type { Tree, GrassBlade } from './Foliage';
+import { Threat } from './Threat';
 
 export class SimulationEngine {
   public canvas: HTMLCanvasElement;
@@ -27,6 +28,7 @@ export class SimulationEngine {
   public totalDirtDugGlobal: number = 0;
   public telemetryTracker: TelemetryTracker;
   private telemetryTimer: number = 0;
+  private threatSpawnTimer: number = 0;
 
   public environment: Environment;
 
@@ -341,13 +343,47 @@ export class SimulationEngine {
         chambers.foodStorages,
         this.colony.broodManager,
         mult,
-        (x, y, color) => this.spawnDebris(x, y, color)
+        (x, y, color) => this.spawnDebris(x, y, color),
+        this.colony.threats
       );
 
       // Track global statistics for dug dirt
       if (prevCargo === 'None' && ant.cargo === 'Dirt') {
         this.totalDirtDugGlobal++;
       }
+    }
+
+    // 4.5. Spawn threats periodically
+    this.threatSpawnTimer += mult;
+    if (this.threatSpawnTimer >= CONFIG.THREAT_SPAWN_INTERVAL) {
+      this.threatSpawnTimer = 0;
+      this.spawnThreat();
+    }
+
+    // Rainy weather additional mite spawns
+    if (this.weather === 'Rainy' && Math.random() < 0.0003 * mult) {
+      this.spawnThreat('Mite');
+    }
+
+    // 4.6. Update active threats
+    for (let i = this.colony.threats.length - 1; i >= 0; i--) {
+      const threat = this.colony.threats[i];
+      if (threat.health <= 0) {
+        threat.decompose(this.grid, (msg, cat) => this.colony.addLog(msg, cat));
+        this.colony.threats.splice(i, 1);
+        continue;
+      }
+      
+      threat.update(
+        this.grid,
+        this.pheromones,
+        this.colony.ants,
+        this.colony.broodList,
+        this.colony.queen,
+        mult,
+        (msg, cat) => this.colony.addLog(msg, cat),
+        (x, y, color, count) => this.spawnDebris(x, y, color, count)
+      );
     }
 
     // Update debris particles
@@ -698,18 +734,20 @@ export class SimulationEngine {
               const r = startRow + rowIndex;
               const homeVal = this.pheromones.getHomePheromone(c, r);
               const foodVal = this.pheromones.getFoodPheromone(c, r);
+              const dangerVal = this.pheromones.getDangerPheromone(c, r);
 
-              if (homeVal > 0.05 || foodVal > 0.05) {
+              if (homeVal > 0.05 || foodVal > 0.05 || dangerVal > 0.05) {
                 hasAnyPheromone = true;
                 const idx = (rowIndex * W + colIndex) * 4;
 
                 const h = Math.min(1.0, homeVal * 0.15);
                 const f = Math.min(1.0, foodVal * 0.2);
+                const d = Math.min(1.0, dangerVal * 0.25);
 
-                data[idx] = Math.floor(f * 255);
-                data[idx + 1] = Math.min(255, Math.floor(f * 120 + h * 100));
-                data[idx + 2] = Math.floor(h * 255);
-                data[idx + 3] = Math.min(255, Math.floor(Math.max(f, h) * 255));
+                data[idx] = Math.min(255, Math.floor(f * 255 + d * 255));
+                data[idx + 1] = Math.min(255, Math.floor(f * 120 + h * 100 + d * 80));
+                data[idx + 2] = Math.min(255, Math.floor(h * 255 + d * 20));
+                data[idx + 3] = Math.min(255, Math.floor(Math.max(f, h, d) * 255));
               }
             }
           }
@@ -747,6 +785,11 @@ export class SimulationEngine {
     // 7. Draw Worker Ants
     this.colony.ants.forEach(ant => {
       this.drawAnt(ctx, ant);
+    });
+
+    // 7.5. Draw Threats
+    this.colony.threats.forEach(threat => {
+      this.drawThreat(ctx, threat);
     });
 
     // Draw rain particles and splashes in world viewport coordinates
@@ -796,6 +839,7 @@ export class SimulationEngine {
     ctx.rotate(ant.angle);
 
     // Select color based on ant role
+    let scaleFactor = 1.0;
     let bodyColor = 'hsl(28, 40%, 12%)'; // Digger: brown amber
     let highlightColor = 'hsl(28, 50%, 25%)';
 
@@ -805,6 +849,14 @@ export class SimulationEngine {
     } else if (ant.role === 'Nurse') {
       bodyColor = 'hsl(200, 35%, 18%)'; // Nurse: dark slate blue
       highlightColor = 'hsl(200, 50%, 32%)';
+    } else if (ant.role === 'Soldier') {
+      scaleFactor = 1.4;
+      bodyColor = 'hsl(0, 70%, 12%)'; // Soldier: dark red-black body
+      highlightColor = 'hsl(0, 90%, 40%)'; // Red highlights
+    }
+
+    if (scaleFactor !== 1.0) {
+      ctx.scale(scaleFactor, scaleFactor);
     }
 
     // A. Draw Legs (6 legs, wiggle based on legCycle)
@@ -863,6 +915,26 @@ export class SimulationEngine {
     ctx.quadraticCurveTo(3.2, 1.8, 3.5, 0.8);
     ctx.stroke();
 
+    // Soldier snapping jaws
+    if (ant.role === 'Soldier') {
+      const jawAngle = 0.2 + Math.sin(ant.legCycle * 2) * 0.15;
+      ctx.strokeStyle = bodyColor;
+      ctx.lineWidth = 0.45;
+      ctx.lineCap = 'round';
+      
+      // Left jaw
+      ctx.beginPath();
+      ctx.moveTo(1.5, -0.5);
+      ctx.quadraticCurveTo(2.7, -0.9 - jawAngle, 2.5, 0.1 - jawAngle);
+      ctx.stroke();
+
+      // Right jaw
+      ctx.beginPath();
+      ctx.moveTo(1.5, 0.5);
+      ctx.quadraticCurveTo(2.7, 0.9 + jawAngle, 2.5, -0.1 + jawAngle);
+      ctx.stroke();
+    }
+
     // C. Draw Cargo
     if (ant.cargo === 'Food') {
       let cargoColor = 'hsl(0, 80%, 48%)'; // red apple chunk
@@ -917,6 +989,21 @@ export class SimulationEngine {
         }
         ctx.restore();
       }
+    }
+
+    // Floating health bar if damaged
+    if (ant.health < 100) {
+      ctx.save();
+      // Undo rotation to keep health bar horizontal
+      ctx.rotate(-ant.angle);
+      
+      const barWidth = 6;
+      const barHeight = 1.2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(-barWidth/2, -6, barWidth, barHeight);
+      ctx.fillStyle = ant.role === 'Soldier' ? 'hsl(0, 100%, 50%)' : 'hsl(120, 100%, 40%)';
+      ctx.fillRect(-barWidth/2, -6, barWidth * (ant.health / 100), barHeight);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -996,8 +1083,20 @@ export class SimulationEngine {
     ctx.moveTo(4.5, -1); ctx.quadraticCurveTo(8, -4, 9, -2);
     ctx.moveTo(4.5, 1);  ctx.quadraticCurveTo(8, 4, 9, 2);
     ctx.stroke();
-
     ctx.restore();
+
+    // Floating health bar if Queen is damaged
+    if (q.health < 100) {
+      ctx.save();
+      ctx.translate(q.x, q.y);
+      const barWidth = 16;
+      const barHeight = 2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(-barWidth/2, -12, barWidth, barHeight);
+      ctx.fillStyle = 'hsl(120, 100%, 40%)';
+      ctx.fillRect(-barWidth/2, -12, barWidth * (q.health / 100), barHeight);
+      ctx.restore();
+    }
   }
 
   private drawBrood(ctx: CanvasRenderingContext2D, brood: Brood) {
@@ -1259,5 +1358,177 @@ export class SimulationEngine {
 
   public triggerFruitDrop() {
     this.foliageSystem.triggerFruitDrop(this.grid, (msg, cat) => this.colony.addLog(msg, cat));
+  }
+
+  public spawnThreat(forcedType?: 'Spider' | 'Beetle' | 'Mite') {
+    const types: ('Spider' | 'Beetle' | 'Mite')[] = ['Spider', 'Beetle', 'Mite'];
+    const type = forcedType || types[Math.floor(Math.random() * types.length)];
+    
+    const id = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    let spawnX = 0;
+    let spawnY = 0;
+
+    if (type === 'Spider') {
+      spawnX = Math.random() < 0.5 ? 20 : (CONFIG.COLS * CONFIG.CELL_SIZE - 20);
+      spawnY = (CONFIG.SKY_HEIGHT - 8) * CONFIG.CELL_SIZE;
+      
+      const spider = new Threat(id, type, spawnX, spawnY);
+      this.colony.threats.push(spider);
+      this.colony.addLog(`A dangerous spider has appeared on the surface!`, 'system');
+    } else if (type === 'Beetle') {
+      spawnX = Math.random() * CONFIG.COLS * CONFIG.CELL_SIZE;
+      spawnY = (CONFIG.SKY_HEIGHT - 6) * CONFIG.CELL_SIZE;
+      
+      const beetle = new Threat(id, type, spawnX, spawnY);
+      this.colony.threats.push(beetle);
+      this.colony.addLog(`A heavy beetle is patrolling the surface!`, 'system');
+    } else if (type === 'Mite') {
+      const chambers = this.colony.getExcavatedChambers(this.grid);
+      if (chambers.nurseries.length > 0) {
+        const nurseryCell = chambers.nurseries[Math.floor(Math.random() * chambers.nurseries.length)];
+        spawnX = nurseryCell.x;
+        spawnY = nurseryCell.y;
+      } else {
+        const nestAirCells: {c: number, r: number}[] = [];
+        for (let r = CONFIG.SKY_HEIGHT; r < CONFIG.ROWS; r++) {
+          for (let c = 0; c < CONFIG.COLS; c++) {
+            const cell = this.grid.getCell(c, r);
+            if (cell && cell.type === 'NestAir') {
+              nestAirCells.push({c, r});
+            }
+          }
+        }
+        if (nestAirCells.length > 0) {
+          const cell = nestAirCells[Math.floor(Math.random() * nestAirCells.length)];
+          spawnX = cell.c * CONFIG.CELL_SIZE;
+          spawnY = cell.r * CONFIG.CELL_SIZE;
+        } else {
+          spawnX = this.colony.queen.x + (Math.random() - 0.5) * 40;
+          spawnY = this.colony.queen.y + (Math.random() - 0.5) * 40;
+        }
+      }
+
+      const mite = new Threat(id, type, spawnX, spawnY);
+      this.colony.threats.push(mite);
+      this.colony.addLog(`A subterranean nursery mite has invaded the nest!`, 'system');
+    }
+  }
+
+  private drawThreat(ctx: CanvasRenderingContext2D, threat: Threat) {
+    ctx.save();
+    ctx.translate(threat.x, threat.y);
+    ctx.rotate(threat.angle);
+
+    const legOffset = Math.sin(threat.legCycle) * 1.5;
+
+    if (threat.type === 'Spider') {
+      // 8 legs
+      ctx.strokeStyle = 'hsl(0, 0%, 10%)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const angleOffset = -1.2 + i * 0.7;
+        const xDir = Math.cos(angleOffset);
+        const yDir = Math.sin(angleOffset);
+        const cycle = legOffset * (i % 2 === 0 ? 1 : -1);
+        ctx.moveTo(xDir * 2, yDir * 2);
+        ctx.lineTo(xDir * 8 + cycle * 0.5, yDir * 8 + cycle);
+      }
+      for (let i = 0; i < 4; i++) {
+        const angleOffset = 1.2 - i * 0.7;
+        const xDir = Math.cos(angleOffset);
+        const yDir = Math.sin(angleOffset);
+        const cycle = legOffset * (i % 2 === 0 ? 1 : -1);
+        ctx.moveTo(xDir * 2, yDir * 2);
+        ctx.lineTo(xDir * 8 + cycle * 0.5, yDir * 8 + cycle);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = 'hsl(0, 0%, 8%)';
+      ctx.beginPath();
+      ctx.ellipse(-3, 0, 5, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'hsl(0, 0%, 14%)';
+      ctx.beginPath();
+      ctx.ellipse(1.5, 0, 3, 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'hsl(0, 100%, 55%)';
+      ctx.beginPath();
+      ctx.arc(3.5, -1, 0.7, 0, Math.PI * 2);
+      ctx.arc(3.5, 1, 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (threat.type === 'Beetle') {
+      ctx.strokeStyle = 'hsl(20, 20%, 12%)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(2, -1); ctx.lineTo(4 + legOffset, -6 - legOffset);
+      ctx.moveTo(2, 1); ctx.lineTo(4 - legOffset, 6 + legOffset);
+      ctx.moveTo(-1, -1); ctx.lineTo(-0.5 - legOffset, -6 + legOffset);
+      ctx.moveTo(-1, 1); ctx.lineTo(-0.5 + legOffset, 6 - legOffset);
+      ctx.moveTo(-4, -1); ctx.lineTo(-5 + legOffset, -6 - legOffset);
+      ctx.moveTo(-4, 1); ctx.lineTo(-5 - legOffset, 6 + legOffset);
+      ctx.stroke();
+
+      ctx.fillStyle = 'hsl(20, 25%, 15%)';
+      ctx.beginPath();
+      ctx.ellipse(-1, 0, 7, 5.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'hsl(20, 25%, 8%)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(-8, 0);
+      ctx.lineTo(6, 0);
+      ctx.stroke();
+
+      ctx.fillStyle = 'hsl(20, 20%, 10%)';
+      ctx.beginPath();
+      ctx.ellipse(4.5, 0, 3, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'hsl(20, 20%, 8%)';
+      ctx.lineWidth = 0.8;
+      const jawAnim = Math.sin(threat.legCycle) * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(6, -1.5);
+      ctx.quadraticCurveTo(8.5, -2.5 - jawAnim, 8, 0.5 - jawAnim);
+      ctx.moveTo(6, 1.5);
+      ctx.quadraticCurveTo(8.5, 2.5 + jawAnim, 8, -0.5 + jawAnim);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'hsl(50, 85%, 80%)';
+      ctx.strokeStyle = 'hsl(50, 60%, 60%)';
+      ctx.lineWidth = 0.4;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 2.0, 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = 'hsl(50, 60%, 65%)';
+      ctx.lineWidth = 0.3;
+      ctx.beginPath();
+      for (let i = -1.5; i <= 1.5; i += 1) {
+        ctx.moveTo(i, -1); ctx.lineTo(i + legOffset * 0.2, -2.5);
+        ctx.moveTo(i, 1); ctx.lineTo(i - legOffset * 0.2, 2.5);
+      }
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    if (threat.health < threat.maxHealth) {
+      ctx.save();
+      ctx.translate(threat.x, threat.y);
+      const barWidth = threat.type === 'Beetle' ? 12 : (threat.type === 'Spider' ? 10 : 6);
+      const barHeight = 1.2;
+      const barY = threat.type === 'Beetle' ? -8 : (threat.type === 'Spider' ? -8 : -5);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(-barWidth/2, barY, barWidth, barHeight);
+      ctx.fillStyle = 'hsl(0, 100%, 45%)';
+      ctx.fillRect(-barWidth/2, barY, barWidth * (threat.health / threat.maxHealth), barHeight);
+      ctx.restore();
+    }
   }
 }

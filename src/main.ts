@@ -147,6 +147,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const statForagers = document.getElementById('stat-foragers') as HTMLElement;
   const statDiggers = document.getElementById('stat-diggers') as HTMLElement;
   const statNurses = document.getElementById('stat-nurses') as HTMLElement;
+  const statSoldiers = document.getElementById('stat-soldiers') as HTMLElement;
   const statFood = document.getElementById('stat-food') as HTMLElement;
   const statEggs = document.getElementById('stat-eggs') as HTMLElement;
   const statLarvae = document.getElementById('stat-larvae') as HTMLElement;
@@ -769,6 +770,7 @@ window.addEventListener('DOMContentLoaded', () => {
     statForagers.textContent = stats.foragerCount.toString();
     statDiggers.textContent = stats.diggerCount.toString();
     statNurses.textContent = stats.nurseCount.toString();
+    statSoldiers.textContent = stats.soldierCount.toString();
     
     statFood.textContent = stats.foodStockpile.toString();
     statEggs.textContent = stats.eggCount.toString();

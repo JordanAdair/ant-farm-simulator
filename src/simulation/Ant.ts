@@ -7,6 +7,7 @@ import { findPath } from './Pathfinder';
 import { moveAndAvoidObstacles, normalizeAngle } from './Locomotion';
 import type { LocomotionEntity } from './Locomotion';
 import { BroodManager, isNurseryFlooded } from './BroodManager';
+import { Threat } from './Threat';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -64,11 +65,13 @@ export class Ant implements LocomotionEntity {
 
   // Steering targets resolved by state machines
   public desiredAngle: number;
-  public desiredPheromone: 'food' | 'home' | 'none' = 'none';
+  public desiredPheromone: 'food' | 'home' | 'danger' | 'none' = 'none';
 
   // Pathfinding
   public currentPath: Position[] | null = null;
   public pathTarget: Position | null = null;
+  public patrolTarget: Position | null = null;
+  public targetThreatId: string | null = null;
 
   constructor(
     id: string,
@@ -117,7 +120,8 @@ export class Ant implements LocomotionEntity {
     foodStorages: Position[],
     broodManager: BroodManager,
     speedMultiplier: number,
-    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void,
+    threats: Threat[] = []
   ) {
     const col = Math.floor(this.x / CONFIG.CELL_SIZE);
     const row = Math.floor(this.y / CONFIG.CELL_SIZE);
@@ -165,10 +169,33 @@ export class Ant implements LocomotionEntity {
     this.desiredAngle = this.angle;
     this.desiredPheromone = 'none';
 
+    // Flee from nearby threats for non-soldiers
+    let isFleeing = false;
+    if (this.role !== 'Soldier' && this.state !== 'Resting') {
+      let closestThreat: Threat | null = null;
+      let minThreatDist = Infinity;
+      for (const threat of threats) {
+        if (!threat.isDead) {
+          const dist = Math.sqrt((threat.x - this.x) ** 2 + (threat.y - this.y) ** 2);
+          if (dist < minThreatDist) {
+            minThreatDist = dist;
+            closestThreat = threat;
+          }
+        }
+      }
+      
+      if (minThreatDist < 60 && closestThreat) {
+        isFleeing = true;
+        this.desiredAngle = Math.atan2(this.y - closestThreat.y, this.x - closestThreat.x);
+        this.desiredPheromone = 'none';
+        this.currentPath = null; // disrupt pathfinding to flee
+      }
+    }
+
     // Role state machines
     if (this.state === 'Resting') {
       this.updateResting(grid, stockpile, foodStorages, spawnDebris);
-    } else {
+    } else if (!isFleeing) {
       switch (this.role) {
         case 'Forager':
           this.updateForager(grid, pheromones, stockpile, foodStorages, spawnDebris);
@@ -178,6 +205,9 @@ export class Ant implements LocomotionEntity {
           break;
         case 'Nurse':
           this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages, broodManager, speedMultiplier, spawnDebris);
+          break;
+        case 'Soldier':
+          this.updateSoldier(grid, pheromones, threats, queenPos, nurseries, speedMultiplier, spawnDebris);
           break;
       }
     }
@@ -1067,6 +1097,10 @@ export class Ant implements LocomotionEntity {
       leftVal = pheromones.getHomePheromone(lCol, lRow);
       centerVal = pheromones.getHomePheromone(cCol, cRow);
       rightVal = pheromones.getHomePheromone(rCol, rRow);
+    } else if (this.desiredPheromone === 'danger') {
+      leftVal = pheromones.getDangerPheromone(lCol, lRow);
+      centerVal = pheromones.getDangerPheromone(cCol, cRow);
+      rightVal = pheromones.getDangerPheromone(rCol, rRow);
     }
 
     // Target angle error normalized to [-1, 1]
@@ -1179,5 +1213,83 @@ export class Ant implements LocomotionEntity {
       }
     }
     return closest;
+  }
+
+  private updateSoldier(
+    grid: WorldGrid,
+    pheromones: PheromoneGrid,
+    threats: Threat[],
+    queenPos: Position,
+    nurseries: Position[],
+    speedMultiplier: number,
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
+  ) {
+    // 1. Search for closest threat within 120 pixels
+    let closestThreat: Threat | null = null;
+    let minDist = Infinity;
+    for (const threat of threats) {
+      if (!threat.isDead) {
+        const dist = Math.sqrt((threat.x - this.x) ** 2 + (threat.y - this.y) ** 2);
+        if (dist < minDist) {
+          minDist = dist;
+          closestThreat = threat;
+        }
+      }
+    }
+
+    if (minDist < 120 && closestThreat) {
+      this.state = 'Attacking';
+      this.targetThreatId = closestThreat.id;
+
+      const dx = closestThreat.x - this.x;
+      const dy = closestThreat.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist <= CONFIG.ATTACK_RANGE + 4) {
+        // Attack target
+        closestThreat.health = Math.max(0, closestThreat.health - CONFIG.SOLDIER_DAMAGE * speedMultiplier);
+        if (spawnDebris && Math.random() < 0.3) {
+          spawnDebris(closestThreat.x, closestThreat.y, 'hsl(0, 85%, 45%)', 2);
+        }
+        
+        // Emit danger pheromones to alert other soldiers
+        const col = Math.floor(this.x / CONFIG.CELL_SIZE);
+        const row = Math.floor(this.y / CONFIG.CELL_SIZE);
+        pheromones.addDangerPheromone(col, row, CONFIG.PHEROMONE_LAY_STRENGTH * 1.5);
+      } else {
+        // Move towards threat
+        this.desiredAngle = this.getAngleTowardsTarget(grid, closestThreat.x, closestThreat.y);
+        this.desiredPheromone = 'none';
+      }
+      return;
+    }
+
+    // 2. If no direct threat is nearby, follow danger pheromone trail
+    const col = Math.floor(this.x / CONFIG.CELL_SIZE);
+    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
+    const dangerVal = pheromones.getDangerPheromone(col, row);
+    if (dangerVal > 0.1) {
+      this.state = 'Patrolling';
+      this.desiredPheromone = 'danger';
+      this.desiredAngle = this.angle + (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
+      return;
+    }
+
+    // 3. Patrol nurseries, nest entrance, or Queen
+    this.state = 'Patrolling';
+    if (!this.patrolTarget || Math.sqrt((this.x - this.patrolTarget.x)**2 + (this.y - this.patrolTarget.y)**2) < 25) {
+      const targets: Position[] = [
+        { x: queenPos.x, y: queenPos.y },
+        { x: grid.nestEntranceCol * CONFIG.CELL_SIZE, y: CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE }
+      ];
+      if (nurseries.length > 0) {
+        targets.push(...nurseries);
+      }
+      this.patrolTarget = targets[Math.floor(Math.random() * targets.length)];
+      this.currentPath = null; // force recalculate path
+    }
+
+    this.desiredAngle = this.getAngleTowardsTarget(grid, this.patrolTarget.x, this.patrolTarget.y);
+    this.desiredPheromone = 'none';
   }
 }

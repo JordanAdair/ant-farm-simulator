@@ -3,7 +3,6 @@ import { OfflineProgression } from './OfflineProgression';
 import { WorldGrid } from './Grid';
 import { ColonyManager } from './Colony';
 import { Environment } from './Environment';
-import { CONFIG } from './types';
 
 describe('Offline Progression Physics & Threats', () => {
   it('should spawn surface water cells during rainy weather offline and evaporate them in sunny weather', () => {
@@ -111,6 +110,11 @@ describe('Offline Progression Physics & Threats', () => {
     // Block the left side of the larder box so water doesn't escape laterally
     for (let r = larder.minRow; r <= larder.maxRow; r++) {
       grid.setCellType(larder.minCol - 1, r, 'Rock');
+    }
+
+    // Block the bottom of the larder box so water doesn't escape downward or diagonally
+    for (let c = 150; c <= 250; c++) {
+      grid.setCellType(c, larder.maxRow + 1, 'Rock');
     }
 
     // Flood the larder box by putting a water cell inside it
