@@ -112,7 +112,7 @@ export class Ant implements LocomotionEntity {
     grid: WorldGrid,
     pheromones: PheromoneGrid,
     stockpile: { food: number },
-    broodList: any[],
+    _broodList: readonly unknown[],
     queenPos: Position,
     activeExcavationStep: ExcavationStep | null,
     activeExcavationTarget: Position | null,
@@ -204,7 +204,7 @@ export class Ant implements LocomotionEntity {
           this.updateDigger(grid, pheromones, activeExcavationStep, activeExcavationTarget);
           break;
         case 'Nurse':
-          this.updateNurse(grid, stockpile, broodList, queenPos, nurseries, foodStorages, broodManager, speedMultiplier, spawnDebris);
+          this.updateNurse(grid, stockpile, queenPos, nurseries, foodStorages, broodManager, speedMultiplier, spawnDebris);
           break;
         case 'Soldier':
           this.updateSoldier(grid, pheromones, threats, queenPos, nurseries, speedMultiplier, spawnDebris);
@@ -706,7 +706,6 @@ export class Ant implements LocomotionEntity {
   private updateNurse(
     grid: WorldGrid,
     stockpile: { food: number },
-    broodList: any[],
     queenPos: Position & { energy?: number },
     nurseries: Position[],
     foodStorages: Position[],
@@ -723,14 +722,10 @@ export class Ant implements LocomotionEntity {
       const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
       this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
-      
+
       // If carrying a brood on the surface, update its position along with the nurse
       if (this.isHoldingBrood && this.targetBroodId) {
-        const brood = broodList.find(b => b.id === this.targetBroodId);
-        if (brood) {
-          brood.x = this.x;
-          brood.y = this.y;
-        }
+        broodManager.moveBroodWithCarrier(this.targetBroodId, { x: this.x, y: this.y });
       }
       return;
     }
@@ -738,28 +733,27 @@ export class Ant implements LocomotionEntity {
     // State check: if holding brood, carry it to safe chamber (ALWAYS run this check)
     if (this.isHoldingBrood && this.targetBroodId) {
       this.state = 'Nursing';
-      const brood = broodList.find(b => b.id === this.targetBroodId);
-      
+      const brood = broodManager.getBroodById(this.targetBroodId);
+
       if (brood) {
         // Select nursery target based on occupancy and dryness
         const targetNursery = broodManager.getAvailableDryNursery(grid, nurseries) || nurseries.find(n => !isNurseryFlooded(grid, n)) || nurseries[Math.abs(this.num) % nurseries.length];
-        
+
         const spacedPos = targetNursery ? broodManager.findSpacedPositionInNursery(grid, targetNursery) : null;
         // Add a small individual offset so they don't pile exactly on one pixel if no spaced position found
         const targetX = spacedPos ? spacedPos.x : (targetNursery ? targetNursery.x + (this.num % 2 === 0 ? 10 : -10) + (this.num % 3) * 5 : this.x);
         const targetY = spacedPos ? spacedPos.y : (targetNursery ? targetNursery.y + 4 : this.y);
 
-        // Update brood pos to match nurse
-        brood.x = this.x;
-        brood.y = this.y;
+        // Update brood pos to match nurse while carrying
+        broodManager.moveBroodWithCarrier(this.targetBroodId, { x: this.x, y: this.y });
 
         const dx = targetX - this.x;
         const dy = targetY - this.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
+
         if (dist < 10) {
-          // Drop it
-          brood.beingCarried = false;
+          // Drop it at current position
+          broodManager.placeBrood(this.targetBroodId, { x: this.x, y: this.y });
           this.isHoldingBrood = false;
           this.targetBroodId = null;
           this.collisionCooldown = 0;
@@ -781,7 +775,7 @@ export class Ant implements LocomotionEntity {
 
     if (isQueenHungry && this.cargo === 'None' && !this.isHoldingBrood) {
       this.state = 'Nursing';
-      
+
       let closestStorage = foodStorages[0];
       let minDist = Infinity;
       for (const storage of foodStorages) {
@@ -798,7 +792,7 @@ export class Ant implements LocomotionEntity {
         const entranceCol = grid.nestEntranceCol;
         const centerRow = STARTING_CHAMBER_CENTER_ROW;
         const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-        
+
         const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
         const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
         const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
@@ -816,12 +810,12 @@ export class Ant implements LocomotionEntity {
                 cell.type = 'NestAir';
                 cell.foodType = undefined;
               }
-              
+
               if (spawnDebris) {
                 let color = 'hsl(0, 80%, 48%)';
                 if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
                 else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, color, 3);
+                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 3);
               }
 
               this.cargo = 'Food';
@@ -845,7 +839,7 @@ export class Ant implements LocomotionEntity {
       const dx = queenPos.x - this.x;
       const dy = queenPos.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (dist < 12) {
         if (queenPos.energy !== undefined) {
           queenPos.energy = Math.min(100, queenPos.energy + 25);
@@ -854,7 +848,7 @@ export class Ant implements LocomotionEntity {
         this.cargoFoodType = undefined;
         this.collisionCooldown = 0;
         this.deliveries++;
-        
+
         if (spawnDebris) {
           spawnDebris(queenPos.x, queenPos.y, 'hsl(0, 80%, 48%)', 4);
         }
@@ -867,11 +861,12 @@ export class Ant implements LocomotionEntity {
     }
 
     // State check: if hungry larva exists and nurse has no cargo, go get food (ALWAYS run this check)
-    const hungryLarva = broodList.find(b => b.type === 'Larva' && b.needsFood && !b.beingCarried);
-    
+    const hungryLarvae = broodManager.getHungryLarvae();
+    const hungryLarva = hungryLarvae.length > 0 ? hungryLarvae[0] : null;
+
     if (hungryLarva && this.cargo === 'None') {
       this.state = 'Nursing';
-      
+
       // Find the closest food storage chamber
       let closestStorage = foodStorages[0];
       let minDist = Infinity;
@@ -890,7 +885,7 @@ export class Ant implements LocomotionEntity {
         const entranceCol = grid.nestEntranceCol;
         const centerRow = STARTING_CHAMBER_CENTER_ROW;
         const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-        
+
         const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
         const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
         const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
@@ -908,12 +903,12 @@ export class Ant implements LocomotionEntity {
                 cell.type = 'NestAir';
                 cell.foodType = undefined;
               }
-              
+
               if (spawnDebris) {
                 let color = 'hsl(0, 80%, 48%)';
                 if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
                 else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE/2, color, 3);
+                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 3);
               }
 
               this.cargo = 'Food';
@@ -938,15 +933,14 @@ export class Ant implements LocomotionEntity {
       const dx = hungryLarva.x - this.x;
       const dy = hungryLarva.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (dist < 10) {
-        hungryLarva.progress = Math.min(100, hungryLarva.progress + 25);
-        hungryLarva.needsFood = false;
+        broodManager.feedLarva(hungryLarva.id);
         this.cargo = 'None';
         this.cargoFoodType = undefined;
         this.collisionCooldown = 0;
         this.deliveries++;
-        
+
         if (spawnDebris) {
           spawnDebris(hungryLarva.x, hungryLarva.y, 'hsl(0, 80%, 48%)', 4);
         }
@@ -974,18 +968,13 @@ export class Ant implements LocomotionEntity {
         if (bestAlt && (bestAlt.x !== nearNursery.x || bestAlt.y !== nearNursery.y)) {
           const currOccupancy = broodManager.getNurseryOccupancy(nearNursery);
           const altOccupancy = broodManager.getNurseryOccupancy(bestAlt);
-          
+
           if (currOccupancy - altOccupancy >= 3 && Math.random() < 0.20 * speedMultiplier) {
-            const itemsInNursery = broodList.filter(b => {
-              if (b.beingCarried) return false;
-              const dx = b.x - nearNursery!.x;
-              const dy = b.y - nearNursery!.y;
-              return Math.sqrt(dx * dx + dy * dy) < 40;
-            });
+            const itemsInNursery = broodManager.getBroodInNursery(nearNursery);
 
             if (itemsInNursery.length > 0) {
               const targetItem = itemsInNursery[Math.floor(Math.random() * itemsInNursery.length)];
-              targetItem.beingCarried = true;
+              broodManager.pickUpBrood(targetItem.id);
               this.isHoldingBrood = true;
               this.targetBroodId = targetItem.id;
               this.collisionCooldown = 0;
@@ -998,49 +987,17 @@ export class Ant implements LocomotionEntity {
     }
 
     // State check: pick up misplaced or flooded brood (ALWAYS run this check)
-    const strayBrood = broodList.find(b => {
-      if (b.beingCarried) return false;
-
-      // 1. Is it in a water cell?
-      const bCol = Math.floor(b.x / CONFIG.CELL_SIZE);
-      const bRow = Math.floor(b.y / CONFIG.CELL_SIZE);
-      const bCell = grid.getCell(bCol, bRow);
-      if (bCell && bCell.type === 'Water') {
-        return true;
-      }
-
-      // 2. Is it in a flooded nursery?
-      for (const nursery of nurseries) {
-        const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
-        if (dist < 40 && isNurseryFlooded(grid, nursery)) {
-          return true;
-        }
-      }
-
-      // 3. Original stray egg/pupa check (misplaced eggs/pupae)
-      if (b.type === 'Egg' || b.type === 'Pupa') {
-        let inDryNursery = false;
-        for (const nursery of nurseries) {
-          const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
-          if (dist < 40 && !isNurseryFlooded(grid, nursery)) {
-            inDryNursery = true;
-            break;
-          }
-        }
-        return !inDryNursery;
-      }
-
-      return false;
-    });
+    const strayBroodList = broodManager.getStrayBrood(grid, nurseries);
+    const strayBrood = strayBroodList.length > 0 ? strayBroodList[0] : null;
 
     if (strayBrood && !this.isHoldingBrood && this.cargo === 'None') {
       this.state = 'Nursing';
       const dx = strayBrood.x - this.x;
       const dy = strayBrood.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (dist < 8) {
-        strayBrood.beingCarried = true;
+        broodManager.pickUpBrood(strayBrood.id);
         this.isHoldingBrood = true;
         this.targetBroodId = strayBrood.id;
         this.collisionCooldown = 0;
@@ -1054,7 +1011,7 @@ export class Ant implements LocomotionEntity {
 
     // Default: wander around the Queen or Brood area
     this.state = 'Wandering';
-    
+
     const distToQueen = Math.sqrt((this.x - queenPos.x) ** 2 + (this.y - queenPos.y) ** 2);
     if (distToQueen > 80) {
       this.desiredAngle = this.getAngleTowardsTarget(grid, queenPos.x, queenPos.y);

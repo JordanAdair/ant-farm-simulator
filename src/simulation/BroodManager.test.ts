@@ -5,7 +5,7 @@ import type { Position } from './types';
 describe('BroodManager Lifecycle', () => {
   it('should progress egg to larva', () => {
     const bm = new BroodManager();
-    bm.broodList.push({
+    bm.addBrood({
       id: 'egg-1',
       type: 'Egg',
       x: 100,
@@ -26,7 +26,7 @@ describe('BroodManager Lifecycle', () => {
 
   it('should hatch pupa into a new ant', () => {
     const bm = new BroodManager();
-    bm.broodList.push({
+    bm.addBrood({
       id: 'pupa-1',
       type: 'Pupa',
       x: 100,
@@ -58,7 +58,7 @@ describe('BroodManager Lifecycle', () => {
 
     // Add 12 items -> Crowded (12/15 = 80%) but not full
     for (let i = 0; i < 12; i++) {
-      bm.broodList.push({
+      bm.addBrood({
         id: `b-${i}`,
         type: 'Egg',
         x: 102,
@@ -74,7 +74,7 @@ describe('BroodManager Lifecycle', () => {
 
     // Add 3 more -> Full (15/15)
     for (let i = 12; i < 15; i++) {
-      bm.broodList.push({
+      bm.addBrood({
         id: `b-${i}`,
         type: 'Egg',
         x: 102,
@@ -95,7 +95,7 @@ describe('BroodManager Lifecycle', () => {
 
     // Put 3 items in n1
     for (let i = 0; i < 3; i++) {
-      bm.broodList.push({
+      bm.addBrood({
         id: `n1-${i}`,
         type: 'Egg',
         x: 100,
@@ -121,7 +121,7 @@ describe('BroodManager Lifecycle', () => {
     const nursery: Position = { x: 100, y: 100 };
 
     // Put a brood item exactly at the center (100, 100)
-    bm.broodList.push({
+    bm.addBrood({
       id: 'center-brood',
       type: 'Egg',
       x: 100,

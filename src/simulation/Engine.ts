@@ -319,13 +319,8 @@ export class SimulationEngine {
         }
         
         if (ant.isHoldingBrood && ant.targetBroodId) {
-          const brood = this.colony.broodList.find(b => b.id === ant.targetBroodId);
-          if (brood) {
-            brood.beingCarried = false;
-            // Snap brood to last safe position
-            brood.x = ant.x;
-            brood.y = ant.y;
-          }
+          // Drop brood at the ant's last position when the nurse dies
+          this.colony.broodManager.placeBrood(ant.targetBroodId, { x: ant.x, y: ant.y });
         }
         
         this.colony.ants.splice(i, 1);
@@ -383,7 +378,8 @@ export class SimulationEngine {
         this.colony.queen,
         mult,
         (msg, cat) => this.colony.addLog(msg, cat),
-        (x, y, color, count) => this.spawnDebris(x, y, color, count)
+        (x, y, color, count) => this.spawnDebris(x, y, color, count),
+        this.colony.broodManager
       );
     }
 

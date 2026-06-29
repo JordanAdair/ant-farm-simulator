@@ -113,15 +113,9 @@ export class ColonyManager {
   }
 
   public ants: Ant[] = [];
-  private _broodList: Brood[] = [];
-  public get broodList(): Brood[] {
-    return this._broodList;
-  }
-  public set broodList(val: Brood[]) {
-    this._broodList = val;
-    if (this.broodManager) {
-      this.broodManager.broodList = val;
-    }
+  /** Delegates to broodManager — BroodManager is the sole owner of brood state. */
+  public get broodList(): readonly Brood[] {
+    return this.broodManager.broodList;
   }
   public queen: {
     x: number;
@@ -174,7 +168,6 @@ export class ColonyManager {
     this.excavationPlan = generateProceduralNestPlan(entranceCol);
 
     this.broodManager = new BroodManager();
-    this.broodManager.broodList = this.broodList; // keep reference synced
 
     // Spawn initial workers
     this.spawnInitialColony(startX, startY);
@@ -670,9 +663,7 @@ export class ColonyManager {
   public reset(entranceCol: number) {
     this.foodStockpile = 200;
     this.ants = [];
-    this.broodList = [];
     this.broodManager = new BroodManager();
-    this.broodManager.broodList = this.broodList;
     this.nextAntNum = 1;
     
     const startX = entranceCol * CONFIG.CELL_SIZE;

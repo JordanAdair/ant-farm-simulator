@@ -197,7 +197,7 @@ export class OfflineProgression {
             deathReason: state.queen.deathReason,
           }
         : engine.colony.queen;
-      engine.colony.broodList = state.broodList || [];
+      engine.colony.broodManager.seedBrood(state.broodList || []);
       engine.colony.logs = (state.logs || []).map((l: any) => {
         let entry: any = {};
         if (typeof l === 'string') {
@@ -733,15 +733,15 @@ export class OfflineProgression {
     if (inGameHours > 0) {
       const intervals = Math.max(1, Math.floor(inGameHours / 12));
       for (let i = 0; i < intervals; i++) {
-        if (colony.broodList.length > 0 && Math.random() < 0.10) {
+        if (colony.broodManager.broodList.length > 0 && Math.random() < 0.10) {
           if (soldiers > 0) {
             threatLogs.push("Defense: Mites invaded the nurseries, but Soldier ants successfully defended the brood!");
           } else {
-            const lossCount = Math.min(colony.broodList.length, 1 + Math.floor(Math.random() * 3));
+            const lossCount = Math.min(colony.broodManager.broodList.length, 1 + Math.floor(Math.random() * 3));
             if (lossCount > 0) {
               broodLosses += lossCount;
               for (let k = 0; k < lossCount; k++) {
-                colony.broodList.pop();
+                colony.broodManager.removeLastBrood();
               }
             }
           }
@@ -866,7 +866,7 @@ export class OfflineProgression {
               
               const rx = colony.queen.x + (Math.random() - 0.5) * 40;
               const ry = colony.queen.y + 12;
-              colony.broodList.push({
+              colony.broodManager.addBrood({
                 id: `brood-${Math.random().toString(36).substr(2, 9)}`,
                 type: 'Egg',
                 x: rx,
@@ -888,58 +888,36 @@ export class OfflineProgression {
         }
         colony.queen.eggTimer = localEggTimer;
 
-        for (let i = colony.broodList.length - 1; i >= 0; i--) {
-          const b = colony.broodList[i];
+        colony.broodManager.updateOffline(
+          stepSizeSeconds,
+          nurses,
+          (amount) => { colony.foodStockpile = Math.max(0, colony.foodStockpile - amount); },
+          (_x, _y) => {
+            antsBorn++;
+            const id = `ant-${Math.random().toString(36).substr(2, 9)}`;
 
-          if (b.type === 'Egg') {
-            b.progress += (100 / CONFIG.EGG_HATCH_TIME) * stepSizeSeconds;
-            if (b.progress >= 100) {
-              b.type = 'Larva';
-              b.progress = 0;
-              b.needsFood = true;
-            }
-          } else if (b.type === 'Larva') {
-            if (b.needsFood && nurses > 0 && colony.foodStockpile >= 1) {
-              colony.foodStockpile -= 1;
-              b.needsFood = false;
-              b.progress += 25;
+            const totalAntsCount = (foragers + diggers + nurses + soldiers) || 1;
+            const fDiff = 0.40 - (foragers / totalAntsCount);
+            const dDiff = 0.35 - (diggers / totalAntsCount);
+            const nDiff = 0.25 - (nurses / totalAntsCount);
+
+            let role: AntRole = 'Forager';
+            if (fDiff >= dDiff && fDiff >= nDiff) {
+              role = 'Forager';
+              foragers++;
+            } else if (dDiff >= nDiff) {
+              role = 'Digger';
+              diggers++;
+            } else {
+              role = 'Nurse';
+              nurses++;
             }
 
-            b.progress += (100 / CONFIG.LARVA_GROWTH_TIME) * stepSizeSeconds * (b.needsFood ? 0.2 : 1.0);
-            if (b.progress >= 100) {
-              b.type = 'Pupa';
-              b.progress = 0;
-            }
-          } else if (b.type === 'Pupa') {
-            b.progress += (100 / CONFIG.PUPA_HATCH_TIME) * stepSizeSeconds;
-            if (b.progress >= 100) {
-              antsBorn++;
-              const id = `ant-${Math.random().toString(36).substr(2, 9)}`;
-              
-              const totalAntsCount = (foragers + diggers + nurses + soldiers) || 1;
-              const fDiff = 0.40 - (foragers / totalAntsCount);
-              const dDiff = 0.35 - (diggers / totalAntsCount);
-              const nDiff = 0.25 - (nurses / totalAntsCount);
-
-              let role: AntRole = 'Forager';
-              if (fDiff >= dDiff && fDiff >= nDiff) {
-                role = 'Forager';
-                foragers++;
-              } else if (dDiff >= nDiff) {
-                role = 'Digger';
-                diggers++;
-              } else {
-                role = 'Nurse';
-                nurses++;
-              }
-
-              const num = colony.nextAntNum++;
-              const ant = new Ant(id, colony.queen.x, colony.queen.y, role, num, createDefaultBrain(), 1);
-              colony.ants.push(ant);
-              colony.broodList.splice(i, 1);
-            }
+            const num = colony.nextAntNum++;
+            const ant = new Ant(id, colony.queen.x, colony.queen.y, role, num, createDefaultBrain(), 1);
+            colony.ants.push(ant);
           }
-        }
+        );
       }
     }
 

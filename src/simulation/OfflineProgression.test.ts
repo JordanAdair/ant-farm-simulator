@@ -69,6 +69,13 @@ describe('OfflineProgression', () => {
         excavationPlan: [],
         queen: mockQueen,
         broodList: [],
+        broodManager: {
+          broodList: [] as any[],
+          seedBrood(items: any[]) { this.broodList = items.slice(); },
+          addBrood(item: any) { this.broodList.push(item); },
+          removeLastBrood() { return this.broodList.pop(); },
+          updateOffline(_dt: number, _nurses: number, _consumeFood: any, _onHatch: any) { return 0; },
+        },
         ants: mockAnts,
         nextAntNum: 2,
         logs: [],
