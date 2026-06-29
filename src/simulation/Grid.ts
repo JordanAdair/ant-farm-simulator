@@ -152,6 +152,117 @@ export class WorldGrid {
     }
   }
 
+  /** Place a Food cell at (col, row) with the given amount and food type. */
+  public convertToFood(col: number, row: number, amount: number, foodType: FoodType = 'Apple') {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    cell.type = 'Food';
+    cell.foodAmount = amount;
+    cell.foodType = foodType;
+  }
+
+  /** Convert a Food cell back to the given air type and clear all food metadata. */
+  public clearFoodCell(col: number, row: number, airType: CellType = 'NestAir') {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    cell.type = airType;
+    cell.foodAmount = 0;
+    cell.foodType = undefined;
+    cell.isMoldy = undefined;
+  }
+
+  /** Deposit a food drop at (col, row) for a dying ant carrying food. */
+  public depositFoodDrop(col: number, row: number, amount: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    cell.type = 'Food';
+    cell.foodAmount = amount;
+  }
+
+  /** Deposit a dirt drop at (col, row) for a dying ant carrying dirt underground. */
+  public depositDirtDrop(col: number, row: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    if (cell.type === 'NestAir') {
+      cell.type = 'Dirt';
+      cell.noiseVal = Math.random();
+    }
+  }
+
+  /**
+   * Remove up to `amount` food from a Food cell.
+   * Returns the amount actually removed.
+   * Clears the cell to `clearType` if food reaches 0.
+   */
+  public removeFood(col: number, row: number, amount: number, clearType: CellType = 'NestAir'): number {
+    if (!this.isValid(col, row)) return 0;
+    const cell = this.cells[col][row];
+    if (cell.type !== 'Food') return 0;
+    const removed = Math.min(cell.foodAmount, amount);
+    cell.foodAmount -= removed;
+    if (cell.foodAmount <= 0) {
+      cell.type = clearType;
+      cell.foodAmount = 0;
+      cell.foodType = undefined;
+      cell.isMoldy = undefined;
+    }
+    return removed;
+  }
+
+  /** Mark a Food cell as moldy. */
+  public setMoldy(col: number, row: number) {
+    if (!this.isValid(col, row)) return;
+    this.cells[col][row].isMoldy = true;
+  }
+
+  /** Decay food in a Food cell by `amount`. Clears cell if food reaches 0. */
+  public decayFood(col: number, row: number, amount: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    if (cell.type !== 'Food') return;
+    cell.foodAmount -= amount;
+    if (cell.foodAmount <= 0) {
+      cell.type = 'NestAir';
+      cell.foodAmount = 0;
+      cell.foodType = undefined;
+      cell.isMoldy = false;
+    }
+  }
+
+  /**
+   * Add `amount` food to an existing Food cell (partial top-up).
+   * Does NOT create a new Food cell — only adds to cells already typed 'Food'.
+   */
+  public addFoodAmount(col: number, row: number, amount: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    if (cell.type === 'Food') {
+      cell.foodAmount += amount;
+    }
+  }
+
+  /**
+   * Subtract `amount` food from an existing Food cell without clearing it.
+   * Use when you know the cell still has food remaining after the deduction.
+   */
+  public subtractFoodAmount(col: number, row: number, amount: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    if (cell.type === 'Food') {
+      cell.foodAmount -= amount;
+    }
+  }
+
+  /** Clear a Food cell to Sky (used when cleaning up stale surface food artifacts). */
+  public clearSurfaceFoodCell(col: number, row: number) {
+    if (!this.isValid(col, row)) return;
+    const cell = this.cells[col][row];
+    if (cell.type === 'Food') {
+      cell.type = 'Sky';
+      cell.foodAmount = 0;
+    }
+  }
+
   public isWalkable(col: number, row: number): boolean {
     const cell = this.getCell(col, row);
     if (!cell) return false;

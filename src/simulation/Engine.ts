@@ -303,18 +303,12 @@ export class SimulationEngine {
         const row = Math.floor(ant.y / CONFIG.CELL_SIZE);
         
         if (ant.cargo === 'Food') {
-          if (this.grid.isValid(col, row)) {
-            this.grid.cells[col][row].type = 'Food';
-            this.grid.cells[col][row].foodAmount = CONFIG.FOOD_PIECE_SIZE;
-          }
+          this.grid.depositFoodDrop(col, row, CONFIG.FOOD_PIECE_SIZE);
         } else if (ant.cargo === 'Dirt') {
           if (row < CONFIG.SKY_HEIGHT) {
             this.grid.depositDirt(col);
           } else {
-            if (this.grid.isValid(col, row) && this.grid.cells[col][row].type === 'NestAir') {
-              this.grid.cells[col][row].type = 'Dirt';
-              this.grid.cells[col][row].noiseVal = Math.random();
-            }
+            this.grid.depositDirtDrop(col, row);
           }
         }
         

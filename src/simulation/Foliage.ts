@@ -82,10 +82,7 @@ export class FoliageSystem {
     treeCols.forEach(col => {
       for (let c = col - 5; c <= col + 5; c++) {
         for (let r = 0; r < CONFIG.ROWS; r++) {
-          if (grid.isValid(c, r) && grid.cells[c][r].type === 'Food') {
-            grid.cells[c][r].type = 'Sky';
-            grid.cells[c][r].foodAmount = 0;
-          }
+          grid.clearSurfaceFoodCell(c, r);
         }
       }
     });

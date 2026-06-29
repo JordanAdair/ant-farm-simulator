@@ -354,11 +354,8 @@ export class Ant implements LocomotionEntity {
           const cell = grid.getCell(tc, tr);
           if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
             this.cargoFoodType = cell.foodType || 'Apple';
-            cell.foodAmount = Math.max(0, cell.foodAmount - CONFIG.FOOD_PIECE_SIZE);
-            if (cell.foodAmount <= 0) {
-              grid.setCellType(tc, tr, 'Sky');
-              grid.cells[tc][tr].foodType = undefined;
-            }
+            const removed = Math.min(CONFIG.FOOD_PIECE_SIZE, cell.foodAmount);
+            grid.removeFood(tc, tr, removed, 'Sky');
             if (spawnDebris) {
               let color = 'hsl(0, 80%, 48%)';
               if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
@@ -459,10 +456,8 @@ export class Ant implements LocomotionEntity {
         for (let c = minCol; c <= maxCol; c++) {
           for (let r = minRow; r <= maxRow; r++) {
             if (grid.isValid(c, r) && grid.getCell(c, r)?.type === 'NestAir') {
-              grid.cells[c][r].type = 'Food';
-              grid.cells[c][r].foodType = this.cargoFoodType || 'Apple';
-              grid.cells[c][r].foodAmount = CONFIG.FOOD_PIECE_SIZE;
-              
+              grid.convertToFood(c, r, CONFIG.FOOD_PIECE_SIZE, this.cargoFoodType || 'Apple');
+
               if (spawnDebris) {
                 let color = 'hsl(0, 80%, 48%)';
                 if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
@@ -804,12 +799,8 @@ export class Ant implements LocomotionEntity {
             const cell = grid.getCell(c, r);
             if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
               this.cargoFoodType = cell.foodType || 'Apple';
-              cell.foodAmount -= 1;
+              grid.removeFood(c, r, 1);
               stockpile.food -= 1;
-              if (cell.foodAmount <= 0) {
-                cell.type = 'NestAir';
-                cell.foodType = undefined;
-              }
 
               if (spawnDebris) {
                 let color = 'hsl(0, 80%, 48%)';
@@ -897,12 +888,8 @@ export class Ant implements LocomotionEntity {
             const cell = grid.getCell(c, r);
             if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
               this.cargoFoodType = cell.foodType || 'Apple';
-              cell.foodAmount -= 1;
+              grid.removeFood(c, r, 1);
               stockpile.food -= 1;
-              if (cell.foodAmount <= 0) {
-                cell.type = 'NestAir';
-                cell.foodType = undefined;
-              }
 
               if (spawnDebris) {
                 let color = 'hsl(0, 80%, 48%)';
