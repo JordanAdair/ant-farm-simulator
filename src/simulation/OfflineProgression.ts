@@ -891,7 +891,11 @@ export class OfflineProgression {
         colony.broodManager.updateOffline(
           stepSizeSeconds,
           nurses,
-          (amount) => { colony.foodStockpile = Math.max(0, colony.foodStockpile - amount); },
+          (amount) => {
+            if (colony.foodStockpile < amount) return false;
+            colony.foodStockpile = Math.max(0, colony.foodStockpile - amount);
+            return true;
+          },
           (_x, _y) => {
             antsBorn++;
             const id = `ant-${Math.random().toString(36).substr(2, 9)}`;

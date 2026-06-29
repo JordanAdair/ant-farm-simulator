@@ -192,7 +192,7 @@ export class BroodManager {
   public updateOffline(
     stepSizeSeconds: number,
     nurses: number,
-    consumeFood: (amount: number) => void,
+    consumeFood: (amount: number) => boolean,
     onHatch: (x: number, y: number) => void
   ): number {
     let hatchCount = 0;
@@ -207,8 +207,7 @@ export class BroodManager {
           b.needsFood = true;
         }
       } else if (b.type === 'Larva') {
-        if (b.needsFood && nurses > 0) {
-          consumeFood(1);
+        if (b.needsFood && nurses > 0 && consumeFood(1)) {
           b.needsFood = false;
           b.progress += 25;
         }
