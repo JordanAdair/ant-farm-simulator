@@ -13,24 +13,32 @@ export interface Cell {
 export class WorldGrid {
   public cols: number;
   public rows: number;
-  public cells: Cell[][];
+  /** Externally read-only view of the grid cells. Mutate via Grid methods or resetCell(). */
+  readonly cells: ReadonlyArray<ReadonlyArray<Cell>>;
+  /** Internal mutable backing array — never expose directly. */
+  private _cells: Cell[][];
   public nestEntranceCol: number;
 
   constructor() {
     this.cols = CONFIG.COLS;
     this.rows = CONFIG.ROWS;
     this.nestEntranceCol = Math.floor(this.cols / 2);
-    this.cells = [];
+    this._cells = [];
+    this.cells = this._cells;
     this.initializeGrid();
   }
 
+  /** Replace a cell wholesale (e.g. during deserialization). Use field mutations via Grid methods for normal gameplay. */
+  public resetCell(col: number, row: number, cell: Cell): void {
+    this._cells[col][row] = cell;
+  }
+
   private initializeGrid() {
-    this.cells = [];
     for (let c = 0; c < this.cols; c++) {
-      this.cells[c] = [];
+      this._cells[c] = [];
       for (let r = 0; r < this.rows; r++) {
         let type: CellType = r < CONFIG.SKY_HEIGHT ? 'Sky' : 'Dirt';
-        this.cells[c][r] = {
+        this._cells[c][r] = {
           type,
           foodAmount: 0,
           noiseVal: Math.random(),
