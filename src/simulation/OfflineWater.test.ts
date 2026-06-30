@@ -4,10 +4,85 @@ import { WorldGrid } from './Grid';
 import { ColonyManager } from './Colony';
 import { Environment } from './Environment';
 import { Threat } from './Threat';
+import type { GameSnapshot } from './types';
+
+/** Build a minimal GameSnapshot for test purposes, reading state from a mock engine shape. */
+function makeSnap(
+  grid: WorldGrid,
+  colony: ColonyManager,
+  env: Environment,
+  totalDirtDugGlobal = 0
+): GameSnapshot {
+  return {
+    version: 1,
+    timestamp: Date.now(),
+    gridStr: OfflineProgression.serializeGrid(grid),
+    totalDirtDugGlobal,
+    maxPopulation: colony.maxPopulation,
+    maxGenerationReached: colony.maxGenerationReached,
+    excavationPlan: colony.excavationPlan,
+    nextAntNum: colony.nextAntNum,
+    logs: colony.logs.slice(),
+    queen: {
+      x: colony.queen.x,
+      y: colony.queen.y,
+      energy: colony.queen.energy,
+      eggTimer: colony.queen.eggTimer,
+      restTimer: colony.queen.restTimer ?? 0,
+      age: colony.queen.age,
+      maxAge: colony.queen.maxAge,
+      health: colony.queen.health,
+      submergedTime: colony.queen.submergedTime,
+      isDead: colony.queen.isDead ?? false,
+      deathReason: colony.queen.deathReason,
+    },
+    broodList: colony.broodManager.broodList.slice() as import('./types').Brood[],
+    ants: colony.ants.map(a => ({
+      id: (a as any).id ?? 'ant-?',
+      x: (a as any).x ?? 0,
+      y: (a as any).y ?? 0,
+      angle: (a as any).angle ?? 0,
+      role: (a as any).role ?? 'Forager',
+      state: (a as any).state ?? 'Wandering',
+      energy: (a as any).energy ?? 100,
+      cargo: (a as any).cargo ?? 'None',
+      num: (a as any).num ?? 1,
+      brain: (a as any).brain ?? { weights: [0, 0, 0, 0.8, 0], bias: 0 },
+      generation: (a as any).generation ?? 1,
+      collisions: (a as any).collisions ?? 0,
+      deliveries: (a as any).deliveries ?? 0,
+      age: (a as any).age ?? 0,
+      maxAge: (a as any).maxAge ?? 600,
+      health: (a as any).health ?? 100,
+      submergedTime: (a as any).submergedTime ?? 0,
+    })),
+    telemetryHistory: [],
+    clock: {
+      dayCount: env.dayCount,
+      hour: env.hour,
+      minute: env.minute,
+      minuteFraction: env.minuteFraction,
+    },
+    weatherState: {
+      weather: env.weather,
+      weatherTimer: env.weatherTimer,
+      weatherTargetDuration: env.weatherTargetDuration,
+      weatherQueue: env.weatherQueue.slice(),
+    },
+  };
+}
+
+/** Helper: call the private runOfflineCalculations with the snapshot-based API. */
+function runCalcs(
+  grid: WorldGrid,
+  snap: GameSnapshot,
+  seconds: number
+): { result: any; updatedSnap: GameSnapshot } {
+  return (OfflineProgression as any).runOfflineCalculations(snap, grid, seconds);
+}
 
 describe('Offline Progression Physics & Threats', () => {
   it('should spawn surface water cells during rainy weather offline and evaporate them in sunny weather', () => {
-    // Create a mock engine
     const grid = new WorldGrid();
     const env = new Environment();
     env.weather = 'Rainy';
@@ -18,24 +93,13 @@ describe('Offline Progression Physics & Threats', () => {
     let targetWeather: 'Sunny' | 'Rainy' = 'Rainy';
     env.refillWeatherQueue = () => {
       while (env.weatherQueue.length < 5) {
-        env.weatherQueue.push({
-          type: targetWeather,
-          durationFrames: 10000,
-        });
+        env.weatherQueue.push({ type: targetWeather, durationFrames: 10000 });
       }
     };
+    env.refillWeatherQueue();
 
     const colony = new ColonyManager(200);
-    colony.ants = []; // no ants
-
-    const mockEngine = {
-      grid,
-      colony,
-      environment: env,
-      totalDirtDugGlobal: 0,
-      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
-      initializeFoliage: () => {},
-    } as any;
+    colony.ants = [];
 
     // Count initial water cells (should be 0)
     let initialWater = 0;
@@ -47,10 +111,13 @@ describe('Offline Progression Physics & Threats', () => {
     expect(initialWater).toBe(0);
 
     // Progress offline by 300 seconds (5 minutes of rainy weather)
-    const resultRain = (OfflineProgression as any).runOfflineCalculations(mockEngine, 300);
+    const snapRain = makeSnap(grid, colony, env);
+    const { result: resultRain, updatedSnap: snapAfterRain } = runCalcs(grid, snapRain, 300);
     expect(resultRain).toBeDefined();
 
-    // Check that we have water cells now
+    // Restore grid from updated snap so grid reflects CA physics
+    // (runOfflineCalculations serialises updated gridStr into updatedSnap)
+    // The grid object was mutated in-place by CA, so we can check it directly:
     let rainyWater = 0;
     for (let c = 0; c < grid.cols; c++) {
       for (let r = 0; r < grid.rows; r++) {
@@ -61,13 +128,18 @@ describe('Offline Progression Physics & Threats', () => {
 
     // Switch weather to Sunny
     targetWeather = 'Sunny';
-    env.weatherQueue = [];
-    env.weather = 'Sunny';
-    env.weatherTimer = 0;
-    env.weatherTargetDuration = 10000;
+    const snapSun: GameSnapshot = {
+      ...snapAfterRain,
+      weatherState: {
+        weather: 'Sunny',
+        weatherTimer: 0,
+        weatherTargetDuration: 10000,
+        weatherQueue: Array(5).fill(null).map(() => ({ type: 'Sunny' as const, durationFrames: 10000 })),
+      },
+    };
 
     // Progress offline by 600 seconds of sunny weather
-    const resultSun = (OfflineProgression as any).runOfflineCalculations(mockEngine, 600);
+    const { result: resultSun } = runCalcs(grid, snapSun, 600);
     expect(resultSun).toBeDefined();
 
     // Verify some water evaporated
@@ -84,27 +156,25 @@ describe('Offline Progression Physics & Threats', () => {
     const grid = new WorldGrid();
     const colony = new ColonyManager(200);
     const env = new Environment();
-    env.weather = 'Rainy'; // keep weather Rainy so that the flooded larder does not evaporate water in step 2
+    env.weather = 'Rainy';
     env.weatherTimer = 0;
     env.weatherTargetDuration = 10000;
     env.weatherQueue = [];
 
-    // Force weather queue to only have Rainy to prevent transition during calculations
+    // Force weather queue to only have Rainy
     env.refillWeatherQueue = () => {
       while (env.weatherQueue.length < 5) {
-        env.weatherQueue.push({
-          type: 'Rainy',
-          durationFrames: 10000,
-        });
+        env.weatherQueue.push({ type: 'Rainy', durationFrames: 10000 });
       }
     };
+    env.refillWeatherQueue();
 
     // Add some food cells in the default starting larder box
     const larder = colony.getLarderBoxes(grid)[0];
     const fc = larder.minCol + 1;
     const fr = larder.maxRow;
     grid.setCellType(fc, fr, 'Food');
-    grid.cells[fc][fr].foodAmount = 25; // Increase to 25 so it does not decay to 0 within 60 seconds
+    grid.cells[fc][fr].foodAmount = 25;
     grid.cells[fc][fr].foodType = 'Apple';
     grid.cells[fc][fr].isMoldy = false;
 
@@ -121,19 +191,11 @@ describe('Offline Progression Physics & Threats', () => {
     // Flood the larder box by putting a water cell inside it
     grid.setCellType(larder.minCol, larder.minRow, 'Water');
 
-    const mockEngine = {
-      grid,
-      colony,
-      environment: env,
-      totalDirtDugGlobal: 0,
-      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
-      initializeFoliage: () => {},
-    } as any;
-
     expect(grid.cells[fc][fr].isMoldy).toBe(false);
 
     // Run offline calculations for 60 seconds
-    const result = (OfflineProgression as any).runOfflineCalculations(mockEngine, 60);
+    const snap = makeSnap(grid, colony, env);
+    const { result } = runCalcs(grid, snap, 60);
 
     // Expect the food to have become moldy and decayed
     expect(grid.cells[fc][fr].isMoldy).toBe(true);
@@ -147,6 +209,7 @@ describe('Offline Progression Physics & Threats', () => {
     const colony = new ColonyManager(200);
     const env = new Environment();
     env.weather = 'Sunny';
+    env.weatherQueue = Array(5).fill(null).map(() => ({ type: 'Sunny' as const, durationFrames: 10000 }));
 
     // Put some eggs in the brood list
     colony.broodManager.seedBrood([
@@ -156,28 +219,20 @@ describe('Offline Progression Physics & Threats', () => {
     ]);
     colony.ants = []; // no soldiers
 
-    const mockEngine = {
-      grid,
-      colony,
-      environment: env,
-      totalDirtDugGlobal: 0,
-      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
-      initializeFoliage: () => {},
-    } as any;
+    const snap = makeSnap(grid, colony, env);
+    expect(snap.broodList).toHaveLength(3);
 
-    // Run calculations for a long offline period (e.g. 10 hours = 36000 seconds, which gives 60 in-game hours)
-    // There is a 10% chance of mite invasion every 12 in-game hours.
-    // In 60 hours, we check 5 times. Mite invasions should trigger with high probability.
-    // If not, we will repeat checks. Let's force Math.random() behavior or run it.
     const originalRandom = Math.random;
+    let updatedSnap: GameSnapshot;
     try {
       // Force random to trigger mite invasions (random < 0.10)
       Math.random = () => 0.05;
 
-      const result = (OfflineProgression as any).runOfflineCalculations(mockEngine, 36000);
-      expect(result.broodLosses).toBeGreaterThan(0);
-      expect(colony.broodList.length).toBeLessThan(3);
-      expect(result.threatLogs.some((log: string) => log.includes('Mites'))).toBe(true);
+      const r = runCalcs(grid, snap, 36000);
+      updatedSnap = r.updatedSnap;
+      expect(r.result.broodLosses).toBeGreaterThan(0);
+      expect(updatedSnap.broodList.length).toBeLessThan(3);
+      expect(r.result.threatLogs.some((log: string) => log.includes('Mites'))).toBe(true);
     } finally {
       Math.random = originalRandom;
     }
@@ -188,6 +243,7 @@ describe('Offline Progression Physics & Threats', () => {
     const colony = new ColonyManager(200);
     const env = new Environment();
     env.weather = 'Rainy';
+    env.weatherQueue = Array(5).fill(null).map(() => ({ type: 'Rainy' as const, durationFrames: 10000 }));
 
     // Create a NestAir tunnel cell in the nest area
     const col = 200;
@@ -200,32 +256,20 @@ describe('Offline Progression Physics & Threats', () => {
       { id: 'd2', role: 'Digger', age: 10, maxAge: 500, health: 100, submergedTime: 0 } as any,
     ];
 
-    const mockEngine = {
-      grid,
-      colony,
-      environment: env,
-      totalDirtDugGlobal: 0,
-      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
-      initializeFoliage: () => {},
-    } as any;
-
     const originalRandom = Math.random;
     try {
-      // Force random to make sure the cave-in chooses our specific tunnel cell
-      // Since it picks random col/row in 150-250, 80-250:
-      // We can intercept math.random or just make all cells in that box NestAir
+      // Make all cells in the cave-in area NestAir so we are sure to get cave-ins
       for (let c = 150; c <= 250; c++) {
         for (let r = 80; r <= 250; r++) {
           grid.setCellType(c, r, 'NestAir');
         }
       }
 
-      // Force Math.random() to always clear or run
-      Math.random = () => 0.05;
+      const snap = makeSnap(grid, colony, env);
 
-      // Progress offline by 1000 seconds
-      const result = (OfflineProgression as any).runOfflineCalculations(mockEngine, 1000);
-      
+      Math.random = () => 0.05;
+      const { result } = runCalcs(grid, snap, 1000);
+
       // Should have caved-in cells, and diggers cleared them
       expect(result.dirtCleared).toBeGreaterThan(0);
       expect(result.threatLogs.some((log: string) => log.includes('cleared'))).toBe(true);
@@ -254,12 +298,7 @@ describe('Offline Progression Physics & Threats', () => {
     env.weather = 'Sunny';
     env.weatherTimer = 0;
     env.weatherTargetDuration = 10000;
-    env.weatherQueue = [];
-    env.refillWeatherQueue = () => {
-      while (env.weatherQueue.length < 5) {
-        env.weatherQueue.push({ type: 'Sunny', durationFrames: 10000 });
-      }
-    };
+    env.weatherQueue = Array(5).fill(null).map(() => ({ type: 'Sunny' as const, durationFrames: 10000 }));
 
     // Place water cell high up in the nest link/air
     const col = 200;
@@ -267,26 +306,17 @@ describe('Offline Progression Physics & Threats', () => {
     grid.setCellType(col, row, 'Water');
     grid.setCellType(col, row + 1, 'NestAir');
 
-    const mockEngine = {
-      grid,
-      colony,
-      environment: env,
-      totalDirtDugGlobal: 0,
-      telemetryTracker: { getHistory: () => [], setHistory: () => {} },
-      initializeFoliage: () => {},
-    } as any;
-
     const originalRandom = Math.random;
     try {
       Math.random = () => 0.1;
 
-      // Run calculations for 30 seconds of sunny weather
-      (OfflineProgression as any).runOfflineCalculations(mockEngine, 30);
+      const snap = makeSnap(grid, colony, env);
+      runCalcs(grid, snap, 30);
 
       // Expect water cell to have trickled down from row 100
       const cellAbove = grid.getCell(col, row);
       expect(cellAbove?.type).not.toBe('Water');
-      
+
       let foundWaterBelow = false;
       for (let c = 0; c < grid.cols; c++) {
         for (let r = row + 1; r < grid.rows; r++) {
@@ -307,7 +337,7 @@ describe('Offline Progression Physics & Threats', () => {
     const colony = new ColonyManager(200);
     const grid = new WorldGrid();
     const threat = new Threat('t1', 'Spider', colony.queen.x, colony.queen.y);
-    
+
     let logAdded = false;
     let logCategory = '';
     const mockAddLog = (msg: string, cat: string) => {

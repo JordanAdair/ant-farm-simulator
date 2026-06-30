@@ -1,5 +1,5 @@
-import { CONFIG } from './types';
-import type { Brood } from './types';
+import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
+import type { Brood, GameSnapshot, AntSnapshot, CellType, FoodType } from './types';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { ColonyManager } from './Colony';
@@ -1342,6 +1342,222 @@ export class SimulationEngine {
 
   public initializeFoliage() {
     this.foliageSystem.initialize(this.grid);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshot API — the only sanctioned bridge between Engine internals and
+  // offline-progression logic.  No outside caller may access Engine, Colony, or
+  // Ant fields directly for persistence purposes.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Capture a complete, serialisable snapshot of all simulation state needed by
+   * offline-progression.  The returned object is a plain data structure with no
+   * class instances; it is safe to JSON-serialise.
+   *
+   * Increment `version` whenever the shape of `GameSnapshot` changes so that
+   * stale saves can be detected at load time.
+   */
+  public snapshot(): GameSnapshot {
+    // Serialise grid to compact column string (mirrors OfflineProgression logic)
+    const chars: string[] = [];
+    for (let c = 0; c < this.grid.cols; c++) {
+      const colChars: string[] = [];
+      for (let r = 0; r < this.grid.rows; r++) {
+        const cell = this.grid.cells[c][r];
+        let ch = 'D';
+        if (cell.type === 'Sky') ch = 'S';
+        else if (cell.type === 'Rock') ch = 'R';
+        else if (cell.type === 'NestAir') ch = 'A';
+        else if (cell.type === 'Water') ch = 'W';
+        else if (cell.type === 'Food') {
+          if (cell.isMoldy) {
+            ch = 'M';
+            if (cell.foodType === 'Foliage') ch = 'N';
+            else if (cell.foodType === 'Carcass') ch = 'O';
+          } else {
+            ch = 'F';
+            if (cell.foodType === 'Foliage') ch = 'G';
+            else if (cell.foodType === 'Carcass') ch = 'C';
+          }
+        }
+        colChars.push(ch);
+      }
+      chars.push(colChars.join(''));
+    }
+    const gridStr = chars.join(',');
+
+    const q = this.colony.queen;
+    return {
+      version: 1,
+      timestamp: Date.now(),
+      gridStr,
+      totalDirtDugGlobal: this.totalDirtDugGlobal,
+      maxPopulation: this.colony.maxPopulation,
+      maxGenerationReached: this.colony.maxGenerationReached,
+      excavationPlan: this.colony.excavationPlan,
+      nextAntNum: this.colony.nextAntNum,
+      logs: this.colony.logs,
+      queen: {
+        x: q.x,
+        y: q.y,
+        energy: q.energy,
+        eggTimer: q.eggTimer,
+        restTimer: q.restTimer ?? 0,
+        age: q.age,
+        maxAge: q.maxAge,
+        health: q.health,
+        submergedTime: q.submergedTime,
+        isDead: q.isDead ?? false,
+        deathReason: q.deathReason,
+      },
+      broodList: this.colony.broodManager.broodList.slice() as import('./types').Brood[],
+      ants: this.colony.ants.map((ant): AntSnapshot => ({
+        id: ant.id,
+        x: ant.x,
+        y: ant.y,
+        angle: ant.angle,
+        role: ant.role,
+        state: ant.state,
+        energy: ant.energy,
+        cargo: ant.cargo,
+        num: ant.num,
+        brain: ant.brain,
+        generation: ant.generation,
+        collisions: ant.collisions,
+        deliveries: ant.deliveries,
+        age: ant.age,
+        maxAge: ant.maxAge,
+        health: ant.health,
+        submergedTime: ant.submergedTime,
+      })),
+      telemetryHistory: this.telemetryTracker.getHistory(),
+      clock: {
+        dayCount: this.environment.dayCount,
+        hour: this.environment.hour,
+        minute: this.environment.minute,
+        minuteFraction: this.environment.minuteFraction,
+      },
+      weatherState: {
+        weather: this.environment.weather,
+        weatherTimer: this.environment.weatherTimer,
+        weatherTargetDuration: this.environment.weatherTargetDuration,
+        weatherQueue: this.environment.weatherQueue.slice(),
+      },
+    };
+  }
+
+  /**
+   * Reconstruct full simulation state from a snapshot previously produced by
+   * `snapshot()`.  After this call the engine is ready to continue the live
+   * simulation as if the snapshot had just been taken.
+   */
+  public restore(s: GameSnapshot): void {
+    // 1. Grid
+    const cols = s.gridStr.split(',');
+    for (let c = 0; c < this.grid.cols; c++) {
+      if (!cols[c]) continue;
+      for (let r = 0; r < this.grid.rows; r++) {
+        const ch = cols[c][r];
+        let type: CellType = 'Dirt';
+        let foodAmount = 0;
+        let foodType: FoodType | undefined = undefined;
+        let isMoldy: boolean | undefined = undefined;
+
+        if (ch === 'S') type = 'Sky';
+        else if (ch === 'R') type = 'Rock';
+        else if (ch === 'A') type = 'NestAir';
+        else if (ch === 'W') type = 'Water';
+        else if (ch === 'F' || ch === 'G' || ch === 'C' || ch === 'M' || ch === 'N' || ch === 'O') {
+          type = 'Food';
+          foodAmount = CONFIG.FOOD_PIECE_SIZE;
+          isMoldy = ch === 'M' || ch === 'N' || ch === 'O';
+          if (ch === 'F' || ch === 'M') foodType = 'Apple';
+          else if (ch === 'G' || ch === 'N') foodType = 'Foliage';
+          else if (ch === 'C' || ch === 'O') foodType = 'Carcass';
+        }
+
+        this.grid.resetCell(c, r, {
+          type,
+          foodAmount,
+          noiseVal: Math.random(),
+          foodType,
+          isMoldy,
+        });
+      }
+    }
+
+    // Reinitialise foliage so grass/trees align to the restored surface
+    this.initializeFoliage();
+
+    // 2. Colony-level scalars
+    this.totalDirtDugGlobal = s.totalDirtDugGlobal;
+    this.colony.maxPopulation = s.maxPopulation;
+    this.colony.maxGenerationReached = s.maxGenerationReached;
+    this.colony.excavationPlan = s.excavationPlan;
+    this.colony.nextAntNum = s.nextAntNum;
+    this.colony.logs = s.logs;
+
+    // 3. Queen
+    const sq = s.queen;
+    this.colony.queen = {
+      ...this.colony.queen, // preserve fields not in snapshot (path, currentNursery, etc.)
+      x: sq.x,
+      y: sq.y,
+      energy: sq.energy,
+      eggTimer: sq.eggTimer,
+      restTimer: sq.restTimer,
+      age: sq.age,
+      maxAge: sq.maxAge,
+      health: sq.health,
+      submergedTime: sq.submergedTime,
+      isDead: sq.isDead,
+      deathReason: sq.deathReason,
+      targetX: sq.x, // safe default
+      direction: this.colony.queen.direction ?? 1,
+    };
+
+    // 4. Brood
+    this.colony.broodManager.seedBrood(s.broodList);
+
+    // 5. Ants
+    const startX = this.grid.nestEntranceCol * CONFIG.CELL_SIZE;
+    const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE;
+
+    this.colony.ants = s.ants.map(a => {
+      const ant = new Ant(a.id, a.x, a.y, a.role, a.num, a.brain, a.generation);
+      ant.angle = a.angle;
+      ant.state = a.state;
+      ant.energy = a.energy;
+      ant.cargo = a.cargo;
+      ant.collisions = a.collisions;
+      ant.deliveries = a.deliveries;
+      ant.age = a.age;
+      ant.maxAge = a.maxAge;
+      ant.health = a.health;
+      ant.submergedTime = a.submergedTime;
+      ant.homeChamberX = startX;
+      ant.homeChamberY = startY;
+      return ant;
+    });
+
+    // 6. Telemetry
+    this.telemetryTracker.setHistory(s.telemetryHistory);
+
+    // 7. Clock
+    this.environment.dayCount = s.clock.dayCount;
+    this.environment.hour = s.clock.hour;
+    this.environment.minute = s.clock.minute;
+    this.environment.minuteFraction = s.clock.minuteFraction;
+
+    // 8. Weather
+    this.environment.weather = s.weatherState.weather;
+    this.environment.weatherTimer = s.weatherState.weatherTimer;
+    this.environment.weatherTargetDuration = s.weatherState.weatherTargetDuration;
+    this.environment.weatherQueue = s.weatherState.weatherQueue.slice();
+    if (this.environment.weatherQueue.length < 5) {
+      this.environment.refillWeatherQueue();
+    }
   }
 
   public triggerFruitDrop() {
