@@ -217,6 +217,12 @@ export class WorldGrid {
     return removed;
   }
 
+  /** Set a cell to Water type (used by rain spawning). */
+  public setWaterCell(col: number, row: number): void {
+    if (!this.isValid(col, row)) return;
+    this._cells[col][row].type = 'Water';
+  }
+
   /** Mark a Food cell as moldy. */
   public setMoldy(col: number, row: number) {
     if (!this.isValid(col, row)) return;
