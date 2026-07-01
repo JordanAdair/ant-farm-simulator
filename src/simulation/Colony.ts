@@ -70,15 +70,13 @@ export class ColonyManager {
             if (remainingToAdd <= 0) break;
             const cell = this._grid.getCell(c, r);
             if (cell && cell.type === 'NestAir') {
-              cell.type = 'Food';
-              cell.foodType = 'Apple';
               const amt = Math.min(remainingToAdd, CONFIG.FOOD_PIECE_SIZE);
-              cell.foodAmount = amt;
+              this._grid.convertToFood(c, r, amt, 'Apple');
               remainingToAdd -= amt;
             } else if (cell && cell.type === 'Food' && cell.foodAmount < CONFIG.FOOD_PIECE_SIZE) {
               const cap = CONFIG.FOOD_PIECE_SIZE - cell.foodAmount;
               const add = Math.min(remainingToAdd, cap);
-              cell.foodAmount += add;
+              this._grid.addFoodAmount(c, r, add);
               remainingToAdd -= add;
             }
           }
@@ -97,12 +95,10 @@ export class ColonyManager {
             if (cell && cell.type === 'Food') {
               const amt = cell.foodAmount;
               if (amt <= remainingToRemove) {
-                cell.type = 'NestAir';
-                cell.foodAmount = 0;
-                cell.foodType = undefined;
+                this._grid.clearFoodCell(c, r);
                 remainingToRemove -= amt;
               } else {
-                cell.foodAmount -= remainingToRemove;
+                this._grid.subtractFoodAmount(c, r, remainingToRemove);
                 remainingToRemove = 0;
               }
             }
@@ -318,17 +314,11 @@ export class ColonyManager {
           const cell = activeGrid.getCell(c, r);
           if (cell && cell.type === 'Food') {
             if (flooded && !cell.isMoldy) {
-              cell.isMoldy = true;
+              activeGrid.setMoldy(c, r);
               moldLogs = true;
             }
             if (cell.isMoldy) {
-              cell.foodAmount -= 0.005 * dt;
-              if (cell.foodAmount <= 0) {
-                cell.type = 'NestAir';
-                cell.foodAmount = 0;
-                cell.foodType = undefined;
-                cell.isMoldy = false;
-              }
+              activeGrid.decayFood(c, r, 0.005 * dt);
             }
           }
         }

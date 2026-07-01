@@ -323,9 +323,7 @@ export class Threat implements LocomotionEntity {
           if (grid.isValid(tc, tr)) {
             const cell = grid.getCell(tc, tr);
             if (cell && (cell.type === 'NestAir' || cell.type === 'Sky')) {
-              grid.cells[tc][tr].type = 'Food';
-              grid.cells[tc][tr].foodType = 'Carcass';
-              grid.cells[tc][tr].foodAmount = CONFIG.FOOD_PER_SOURCE || 50;
+              grid.convertToFood(tc, tr, CONFIG.FOOD_PER_SOURCE || 50, 'Carcass');
               spawned++;
             }
           }

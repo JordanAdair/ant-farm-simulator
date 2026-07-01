@@ -200,7 +200,7 @@ export class Environment {
         const col = grid.nestEntranceCol - 2 + Math.floor(Math.random() * 4);
         const cell = grid.getCell(col, CONFIG.SKY_HEIGHT);
         if (cell && (cell.type === 'NestAir' || cell.type === 'Sky')) {
-          cell.type = 'Water';
+          grid.setWaterCell(col, CONFIG.SKY_HEIGHT);
         }
       }
     } else if (this.weather === 'Sunny') {

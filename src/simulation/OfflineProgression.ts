@@ -72,13 +72,13 @@ export class OfflineProgression {
           else if (ch === 'C' || ch === 'O') foodType = 'Carcass';
         }
 
-        grid.cells[c][r] = {
+        grid.resetCell(c, r, {
           type,
           foodAmount,
           noiseVal: Math.random(),
           foodType,
           isMoldy,
-        };
+        });
       }
     }
   }
