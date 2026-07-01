@@ -8,7 +8,9 @@ import { TelemetryTracker } from './Telemetry';
 import { Environment } from './Environment';
 import { FoliageSystem } from './Foliage';
 import type { Tree, GrassBlade } from './Foliage';
-import { Threat } from './Threat';
+import { ThreatManager } from './ThreatManager';
+import type { ThreatContext } from './ThreatManager';
+import type { Threat } from './Threat';
 
 export class SimulationEngine {
   public canvas: HTMLCanvasElement;
@@ -28,7 +30,7 @@ export class SimulationEngine {
   public totalDirtDugGlobal: number = 0;
   public telemetryTracker: TelemetryTracker;
   private telemetryTimer: number = 0;
-  private threatSpawnTimer: number = 0;
+  private threatManager!: ThreatManager;
 
   public environment: Environment;
 
@@ -141,6 +143,9 @@ export class SimulationEngine {
     this.telemetryTracker = new TelemetryTracker();
     this.environment = new Environment();
     this.foliageSystem = new FoliageSystem();
+    // ThreatManager receives the same array that ColonyManager owns so that
+    // the renderer and soldier AI can still read colony.threats directly.
+    this.threatManager = new ThreatManager(this.colony.threats);
 
     // Initial camera coordinates centering on the Queen
     this.camera.x = this.colony.queen.x;
@@ -343,39 +348,20 @@ export class SimulationEngine {
       }
     }
 
-    // 4.5. Spawn threats periodically
-    this.threatSpawnTimer += mult;
-    if (this.threatSpawnTimer >= CONFIG.THREAT_SPAWN_INTERVAL) {
-      this.threatSpawnTimer = 0;
-      this.spawnThreat();
-    }
-
-    // Rainy weather additional mite spawns
-    if (this.weather === 'Rainy' && Math.random() < 0.0003 * mult) {
-      this.spawnThreat('Mite');
-    }
-
-    // 4.6. Update active threats
-    for (let i = this.colony.threats.length - 1; i >= 0; i--) {
-      const threat = this.colony.threats[i];
-      if (threat.health <= 0) {
-        threat.decompose(this.grid, (msg, cat) => this.colony.addLog(msg, cat));
-        this.colony.threats.splice(i, 1);
-        continue;
-      }
-      
-      threat.update(
-        this.grid,
-        this.pheromones,
-        this.colony.ants,
-        this.colony.broodList,
-        this.colony.queen,
-        mult,
-        (msg, cat) => this.colony.addLog(msg, cat),
-        (x, y, color, count) => this.spawnDebris(x, y, color, count),
-        this.colony.broodManager
-      );
-    }
+    // 4.5–4.6. Threat lifecycle: spawn, tick, removal — all owned by ThreatManager.
+    const threatCtx: ThreatContext = {
+      weather: this.weather,
+      grid: this.grid,
+      pheromones: this.pheromones,
+      ants: this.colony.ants,
+      broodList: this.colony.broodList as Brood[],
+      queen: this.colony.queen,
+      speedMultiplier: mult,
+      addLog: (msg, cat) => this.colony.addLog(msg, cat),
+      spawnDebris: (x, y, color, count) => this.spawnDebris(x, y, color, count),
+      getExcavatedChambers: (grid) => this.colony.getExcavatedChambers(grid),
+    };
+    this.threatManager.update(threatCtx);
 
     // Update debris particles
     for (let i = this.debrisParticles.length - 1; i >= 0; i--) {
@@ -1360,60 +1346,6 @@ export class SimulationEngine {
 
   public triggerFruitDrop() {
     this.foliageSystem.triggerFruitDrop(this.grid, (msg, cat) => this.colony.addLog(msg, cat));
-  }
-
-  public spawnThreat(forcedType?: 'Spider' | 'Beetle' | 'Mite') {
-    const types: ('Spider' | 'Beetle' | 'Mite')[] = ['Spider', 'Beetle', 'Mite'];
-    const type = forcedType || types[Math.floor(Math.random() * types.length)];
-    
-    const id = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    let spawnX = 0;
-    let spawnY = 0;
-
-    if (type === 'Spider') {
-      spawnX = Math.random() < 0.5 ? 20 : (CONFIG.COLS * CONFIG.CELL_SIZE - 20);
-      spawnY = (CONFIG.SKY_HEIGHT - 8) * CONFIG.CELL_SIZE;
-      
-      const spider = new Threat(id, type, spawnX, spawnY);
-      this.colony.threats.push(spider);
-      this.colony.addLog(`A dangerous spider has appeared on the surface!`, 'system');
-    } else if (type === 'Beetle') {
-      spawnX = Math.random() * CONFIG.COLS * CONFIG.CELL_SIZE;
-      spawnY = (CONFIG.SKY_HEIGHT - 6) * CONFIG.CELL_SIZE;
-      
-      const beetle = new Threat(id, type, spawnX, spawnY);
-      this.colony.threats.push(beetle);
-      this.colony.addLog(`A heavy beetle is patrolling the surface!`, 'system');
-    } else if (type === 'Mite') {
-      const chambers = this.colony.getExcavatedChambers(this.grid);
-      if (chambers.nurseries.length > 0) {
-        const nurseryCell = chambers.nurseries[Math.floor(Math.random() * chambers.nurseries.length)];
-        spawnX = nurseryCell.x;
-        spawnY = nurseryCell.y;
-      } else {
-        const nestAirCells: {c: number, r: number}[] = [];
-        for (let r = CONFIG.SKY_HEIGHT; r < CONFIG.ROWS; r++) {
-          for (let c = 0; c < CONFIG.COLS; c++) {
-            const cell = this.grid.getCell(c, r);
-            if (cell && cell.type === 'NestAir') {
-              nestAirCells.push({c, r});
-            }
-          }
-        }
-        if (nestAirCells.length > 0) {
-          const cell = nestAirCells[Math.floor(Math.random() * nestAirCells.length)];
-          spawnX = cell.c * CONFIG.CELL_SIZE;
-          spawnY = cell.r * CONFIG.CELL_SIZE;
-        } else {
-          spawnX = this.colony.queen.x + (Math.random() - 0.5) * 40;
-          spawnY = this.colony.queen.y + (Math.random() - 0.5) * 40;
-        }
-      }
-
-      const mite = new Threat(id, type, spawnX, spawnY);
-      this.colony.threats.push(mite);
-      this.colony.addLog(`A subterranean nursery mite has invaded the nest!`, 'system');
-    }
   }
 
   private drawThreat(ctx: CanvasRenderingContext2D, threat: Threat) {
