@@ -16,7 +16,7 @@ describe('ColonyManager', () => {
 
   it('should decrement Queen egg timer even when food is 0', () => {
     const colony = new ColonyManager(200);
-    colony.foodStockpile = 0;
+    colony.foodStockpile.setTotal(0);
     colony.queen.eggTimer = 10;
 
     // Advance by 60 frames (1 second at 1x speed)
@@ -27,7 +27,7 @@ describe('ColonyManager', () => {
 
   it('should freeze Queen egg timer at 0 when food is 0', () => {
     const colony = new ColonyManager(200);
-    colony.foodStockpile = 0;
+    colony.foodStockpile.setTotal(0);
     colony.queen.eggTimer = 0.5;
 
     // Advance by 60 frames (1 second at 1x speed)
@@ -39,32 +39,32 @@ describe('ColonyManager', () => {
 
   it('should lay egg immediately when food becomes available if timer is 0', () => {
     const colony = new ColonyManager(200);
-    colony.foodStockpile = 0;
+    colony.foodStockpile.setTotal(0);
     colony.queen.eggTimer = 0;
 
     // Give 10 food
-    colony.foodStockpile = 10;
+    colony.foodStockpile.setTotal(10);
 
     // Advance by 1 frame (dt = 1)
     colony.update(1);
 
     expect(colony.broodList.length).toBe(1);
     expect(colony.broodList[0].type).toBe('Egg');
-    expect(colony.foodStockpile).toBeCloseTo(0.0, 5);
+    expect(colony.foodStockpile.total).toBeCloseTo(0.0, 5);
     expect(colony.queen.eggTimer).toBeGreaterThan(0); // Reset timer
   });
 
   it('should scale food consumption with population', () => {
     const colony = new ColonyManager(200);
-    colony.foodStockpile = 100;
-    
+    colony.foodStockpile.setTotal(100);
+
     // We have 8 ants in the colony.
     // Passive consumption rate = 8 * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * dt / 60
     // At dt = 60 (1 second): 8 * 0.05 * 0.1 * 1 = 0.04 food.
     const expectedConsumption = 8 * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * 1; // 0.04
-    
+
     colony.update(60);
-    expect(colony.foodStockpile).toBeCloseTo(100 - expectedConsumption, 5);
+    expect(colony.foodStockpile.total).toBeCloseTo(100 - expectedConsumption, 5);
   });
 
   it('should correctly select the underrepresented role based on target ratios', () => {
@@ -126,12 +126,21 @@ describe('ColonyManager', () => {
 
   it('should relocate the Queen when her current nursery is full', () => {
     const colony = new ColonyManager(200);
+    // Persistent cell store so FoodStockpile mutations are durable across getCell calls.
+    const cellStore: Record<string, { type: string; foodAmount: number; noiseVal: number; foodType?: string }> = {};
+    const getCell = (c: number, r: number) => {
+      const key = `${c},${r}`;
+      if (!cellStore[key]) cellStore[key] = { type: 'NestAir', foodAmount: 0, noiseVal: 0 };
+      return cellStore[key];
+    };
     const grid = {
       isValid: () => true,
       isWalkable: () => true,
       getNestVolume: () => 100,
       cols: CONFIG.COLS,
       rows: CONFIG.ROWS,
+      nestEntranceCol: 200,
+      getCell,
     } as any;
 
     const n1 = { x: 100, y: 100 };
@@ -162,7 +171,7 @@ describe('ColonyManager', () => {
 
     // Force queen.eggTimer to 0 and ensure enough food to lay egg
     colony.queen.eggTimer = 0;
-    colony.foodStockpile = 20;
+    colony.foodStockpile.setTotal(20);
 
     // Call update to trigger layEgg -> relocation check
     colony.update(1, grid);
@@ -206,11 +215,9 @@ describe('ColonyManager', () => {
     const foodStorages = chambers.foodStorages;
     expect(foodStorages.length).toBeGreaterThan(0);
 
-    // Grid starts with food (synchronized from fallback = 200)
-    expect(colony.foodStockpile).toBe(200);
+    // Grid starts with food (deposited from pending initial amount = 200)
+    expect(colony.foodStockpile.total).toBe(200);
 
-    // Call update on the nurse directly in a loop to let her retrieve food and feed the Queen
-    const stockpileRef = { food: colony.foodStockpile };
     let fed = false;
 
     // Run nurse updates for up to 300 steps
@@ -223,7 +230,7 @@ describe('ColonyManager', () => {
           getFoodPheromone: () => 0,
           getHomePheromone: () => 0,
         } as any,
-        stockpileRef,
+        colony.foodStockpile,
         colony.broodList,
         colony.queen,
         null,
@@ -235,9 +242,6 @@ describe('ColonyManager', () => {
         () => {}
       );
 
-      // Reconcile stockpile value
-      colony.foodStockpile = stockpileRef.food;
-
       if (colony.queen.energy > 50) {
         fed = true;
         break;
@@ -246,7 +250,7 @@ describe('ColonyManager', () => {
 
     expect(fed).toBe(true);
     expect(colony.queen.energy).toBeCloseTo(75, 2);
-    expect(colony.foodStockpile).toBe(199); // 1 unit of food cell amount was consumed
+    expect(colony.foodStockpile.total).toBe(199); // 1 unit of food cell amount was consumed
   });
 });
 

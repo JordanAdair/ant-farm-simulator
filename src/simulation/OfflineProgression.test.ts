@@ -4,6 +4,21 @@ import { WorldGrid } from './Grid';
 import { CONFIG } from './types';
 import type { GameSnapshot } from './types';
 import { generateProceduralNestPlan } from './NestPlanner';
+import type { IFoodStockpile } from './FoodStockpile';
+
+function makeStockpile(initial: number): IFoodStockpile & { setTotal: (n: number) => void } {
+  let food = initial;
+  return {
+    get total() { return food; },
+    consume(amount: number) {
+      if (food < amount) return false;
+      food -= amount;
+      return true;
+    },
+    deposit(amount: number) { food += amount; },
+    setTotal(amount: number) { food = amount; },
+  };
+}
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -113,6 +128,18 @@ describe('OfflineProgression', () => {
     const result = OfflineProgression.loadState(mockEngine);
     // Since elapsedSeconds is 0 (both saved and loaded in same instant), it should return null
     expect(result).toBeNull();
+  });
+
+  it('makeStockpile helper works as an IFoodStockpile mock', () => {
+    const sp = makeStockpile(100);
+    expect(sp.total).toBe(100);
+    expect(sp.consume(30)).toBe(true);
+    expect(sp.total).toBe(70);
+    sp.deposit(10);
+    expect(sp.total).toBe(80);
+    sp.setTotal(50);
+    expect(sp.total).toBe(50);
+    expect(sp.consume(100)).toBe(false);
   });
 
   it('should compute offline progression when elapsed time is > 15 seconds', () => {

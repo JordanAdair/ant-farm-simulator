@@ -5,13 +5,14 @@ import type { WorldGrid } from '../Grid';
 import type { PheromoneGrid } from '../Pheromones';
 import type { BroodManager } from '../BroodManager';
 import type { Threat } from '../Threat';
+import type { IFoodStockpile } from '../FoodStockpile';
 
 export class DiggerBehavior implements RoleBehavior {
   update(
     ctx: AntContext,
     grid: WorldGrid,
     _pheromones: PheromoneGrid,
-    _stockpile: { food: number },
+    _stockpile: IFoodStockpile,
     _broodList: readonly Brood[],
     _queenPos: Position & { energy?: number },
     activeExcavationStep: ExcavationStep | null,

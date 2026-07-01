@@ -133,6 +133,7 @@ import type { WorldGrid } from './Grid';
 import type { PheromoneGrid } from './Pheromones';
 import type { BroodManager } from './BroodManager';
 import type { Threat } from './Threat';
+import type { IFoodStockpile } from './FoodStockpile';
 
 /**
  * The narrow contract that role behavior modules receive each tick.
@@ -179,7 +180,7 @@ export interface AntContext {
  * Interface that every role behavior module must implement.
  */
 export interface RoleBehavior {
-  update(ctx: AntContext, grid: WorldGrid, pheromones: PheromoneGrid, stockpile: { food: number }, broodList: readonly Brood[], queenPos: Position & { energy?: number }, activeExcavationStep: ExcavationStep | null, activeExcavationTarget: Position | null, nurseries: Position[], foodStorages: Position[], broodManager: BroodManager, speedMultiplier: number, threats: Threat[], spawnDebris?: (x: number, y: number, color: string, count?: number) => void): void;
+  update(ctx: AntContext, grid: WorldGrid, pheromones: PheromoneGrid, stockpile: IFoodStockpile, broodList: readonly Brood[], queenPos: Position & { energy?: number }, activeExcavationStep: ExcavationStep | null, activeExcavationTarget: Position | null, nurseries: Position[], foodStorages: Position[], broodManager: BroodManager, speedMultiplier: number, threats: Threat[], spawnDebris?: (x: number, y: number, color: string, count?: number) => void): void;
 }
 
 export interface ExcavationStep {
