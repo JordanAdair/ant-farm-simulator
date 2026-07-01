@@ -71,8 +71,24 @@ export class FoodStockpile implements IFoodStockpile {
 
   /**
    * Set the total food to a specific value.
-   * If the grid is available, adjusts cells directly.
-   * If not yet connected, stores the value as a pending deposit for when it connects.
+   *
+   * **Intended callers:** `Engine.restore()` and `Colony.reset()` — save/restore
+   * scenarios where a known food level must be injected before or just after the
+   * colony is constructed.
+   *
+   * **Two code paths, one silent difference:**
+   * - *Grid connected* — computes `amount − current` and immediately deposits or
+   *   removes food from larder cells. This is the "fast path" for production use.
+   * - *Grid not yet connected* — queues `amount` as `_pendingDeposit` and clears
+   *   `_gridWasConnected` so the deposit fires the first time a grid call succeeds.
+   *   This path is **only safe** when the grid will be attached and larder cells
+   *   will be excavated before the simulation runs (i.e. `setTotal` is called
+   *   during construction, before the first tick). If the grid never connects,
+   *   the food is silently lost.
+   *
+   * **Callers that need guaranteed immediate application** must ensure the grid is
+   * connected (i.e. `getGrid()` returns a non-null value) before calling this
+   * method.
    */
   setTotal(amount: number): void {
     const grid = this.getGrid();
