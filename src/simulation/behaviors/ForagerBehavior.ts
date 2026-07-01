@@ -4,13 +4,14 @@ import type { WorldGrid } from '../Grid';
 import type { PheromoneGrid } from '../Pheromones';
 import type { BroodManager } from '../BroodManager';
 import type { Threat } from '../Threat';
+import type { IFoodStockpile } from '../FoodStockpile';
 
 export class ForagerBehavior implements RoleBehavior {
   update(
     ctx: AntContext,
     grid: WorldGrid,
     pheromones: PheromoneGrid,
-    stockpile: { food: number },
+    stockpile: IFoodStockpile,
     _broodList: readonly Brood[],
     _queenPos: Position & { energy?: number },
     _activeExcavationStep: ExcavationStep | null,
@@ -167,7 +168,7 @@ export class ForagerBehavior implements RoleBehavior {
         }
 
         if (deposited) {
-          stockpile.food += CONFIG.FOOD_PIECE_SIZE;
+          stockpile.deposit(CONFIG.FOOD_PIECE_SIZE);
           ctx.cargo = 'None';
           ctx.cargoFoodType = undefined;
           ctx.state = 'SearchingForFood';

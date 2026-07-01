@@ -6,106 +6,22 @@ import { generateProceduralNestPlan, isCellInsidePlanStep } from './NestPlanner'
 import { BroodManager } from './BroodManager';
 import { findPath } from './Pathfinder';
 import { Threat } from './Threat';
+import { FoodStockpile } from './FoodStockpile';
 
 export class ColonyManager {
   private _grid?: WorldGrid;
-  private _fallbackFoodStockpile: number = 200;
   public maxPopulation: number = 0;
   public maxGenerationReached: number = 1;
+
+  /** Single source of truth for all colony food. */
+  public readonly foodStockpile: FoodStockpile;
 
   public get grid(): WorldGrid | undefined {
     return this._grid;
   }
 
   public set grid(g: WorldGrid | undefined) {
-    const wasUndefined = !this._grid;
     this._grid = g;
-    if (wasUndefined && g) {
-      const physicalFood = this.foodStockpile;
-      if (physicalFood === 0 && this._fallbackFoodStockpile > 0) {
-        this.foodStockpile = this._fallbackFoodStockpile;
-      } else {
-        this._fallbackFoodStockpile = physicalFood;
-      }
-    }
-  }
-
-  public get foodStockpile(): number {
-    if (!this._grid || !(this._grid instanceof WorldGrid)) {
-      return this._fallbackFoodStockpile;
-    }
-    const larders = this.getLarderBoxes(this._grid);
-    let total = 0;
-    for (const box of larders) {
-      for (let c = box.minCol; c <= box.maxCol; c++) {
-        for (let r = box.minRow; r <= box.maxRow; r++) {
-          const cell = this._grid.getCell(c, r);
-          if (cell && cell.type === 'Food') {
-            total += cell.foodAmount;
-          }
-        }
-      }
-    }
-    return total;
-  }
-
-  public set foodStockpile(value: number) {
-    this._fallbackFoodStockpile = value;
-    if (!this._grid || !(this._grid instanceof WorldGrid)) return;
-
-    const current = this.foodStockpile;
-    const diff = value - current;
-
-    if (diff === 0) return;
-
-    const larders = this.getLarderBoxes(this._grid);
-
-    if (diff > 0) {
-      let remainingToAdd = diff;
-      for (const box of larders) {
-        if (remainingToAdd <= 0) break;
-        for (let c = box.minCol; c <= box.maxCol; c++) {
-          if (remainingToAdd <= 0) break;
-          for (let r = box.minRow; r <= box.maxRow; r++) {
-            if (remainingToAdd <= 0) break;
-            const cell = this._grid.getCell(c, r);
-            if (cell && cell.type === 'NestAir') {
-              const amt = Math.min(remainingToAdd, CONFIG.FOOD_PIECE_SIZE);
-              this._grid.convertToFood(c, r, amt, 'Apple');
-              remainingToAdd -= amt;
-            } else if (cell && cell.type === 'Food' && cell.foodAmount < CONFIG.FOOD_PIECE_SIZE) {
-              const cap = CONFIG.FOOD_PIECE_SIZE - cell.foodAmount;
-              const add = Math.min(remainingToAdd, cap);
-              this._grid.addFoodAmount(c, r, add);
-              remainingToAdd -= add;
-            }
-          }
-        }
-      }
-    } else {
-      let remainingToRemove = -diff;
-      for (let b = larders.length - 1; b >= 0; b--) {
-        if (remainingToRemove <= 0) break;
-        const box = larders[b];
-        for (let c = box.maxCol; c >= box.minCol; c--) {
-          if (remainingToRemove <= 0) break;
-          for (let r = box.maxRow; r >= box.minRow; r--) {
-            if (remainingToRemove <= 0) break;
-            const cell = this._grid.getCell(c, r);
-            if (cell && cell.type === 'Food') {
-              const amt = cell.foodAmount;
-              if (amt <= remainingToRemove) {
-                this._grid.clearFoodCell(c, r);
-                remainingToRemove -= amt;
-              } else {
-                this._grid.subtractFoodAmount(c, r, remainingToRemove);
-                remainingToRemove = 0;
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   public ants: Ant[] = [];
@@ -140,6 +56,11 @@ export class ColonyManager {
   constructor(entranceCol: number) {
     const startX = entranceCol * CONFIG.CELL_SIZE;
     const startY = STARTING_CHAMBER_CENTER_ROW * CONFIG.CELL_SIZE; // queen chamber height
+
+    this.foodStockpile = new FoodStockpile(
+      () => this._grid,
+      () => this.getLarderBoxes()
+    );
 
     this.queen = {
       x: startX,
@@ -262,7 +183,7 @@ export class ColonyManager {
       // The egg timer always ticks down, regardless of food stockpile!
       this.queen.eggTimer -= (1 / 60) * dt;
       if (this.queen.eggTimer <= 0) {
-        if (this.foodStockpile >= 10) {
+        if (this.foodStockpile.total >= 10) {
           const chambers = this.getExcavatedChambers(activeGrid);
           const currentNursery = this.queen.currentNursery || chambers.nurseries[0];
 
@@ -287,7 +208,7 @@ export class ColonyManager {
 
           // Only lay egg if not currently relocating
           if (!this.queen.path || this.queen.path.length === 0) {
-            this.foodStockpile -= 10;
+            this.foodStockpile.consume(10);
             this.broodManager.layEgg(activeGrid, this.queen, chambers.nurseries, (msg, cat) => this.addLog(msg, cat));
             this.queen.eggTimer = CONFIG.QUEEN_EGG_INTERVAL + Math.random() * 20; // reset
           }
@@ -298,10 +219,10 @@ export class ColonyManager {
       }
     }
 
-    if (this.foodStockpile > 0) {
+    if (this.foodStockpile.total > 0) {
       // Passive consumption scales with the number of worker ants in the colony (aligned with OfflineProgression)
       const passiveConsumption = this.ants.length * CONFIG.FOOD_CONSUMPTION_RATE * 0.1 * (dt / 60);
-      this.foodStockpile = Math.max(0, this.foodStockpile - passiveConsumption);
+      this.foodStockpile.consume(passiveConsumption);
     }
 
     // Larder mold decay logic
@@ -643,7 +564,7 @@ export class ColonyManager {
       eggCount: eggs,
       larvaCount: larvae,
       pupaCount: pupae,
-      foodStockpile: Math.floor(this.foodStockpile),
+      foodStockpile: Math.floor(this.foodStockpile.total),
       dirtDugCount: this.ants.reduce((acc, a) => acc + (a.role === 'Digger' && a.state === 'CarryingDirt' ? 1 : 0), 0), // we'll accumulate this globally
       nestVolume: grid.getNestVolume(),
       activeProject: activeStep ? activeStep.name : 'Fully Built Colony',
@@ -651,7 +572,7 @@ export class ColonyManager {
   }
 
   public reset(entranceCol: number) {
-    this.foodStockpile = 200;
+    this.foodStockpile.setTotal(200);
     this.ants = [];
     this.broodManager = new BroodManager();
     this.nextAntNum = 1;
@@ -730,11 +651,13 @@ export class ColonyManager {
     return { nurseries, foodStorages };
   }
 
-  public getLarderBoxes(grid: WorldGrid): LarderBox[] {
+  public getLarderBoxes(grid?: WorldGrid): LarderBox[] {
+    const activeGrid = grid ?? this._grid;
+    if (!activeGrid) return [];
     const boxes: LarderBox[] = [];
 
     // The Queen's chamber is the default nursery and food storage
-    const entranceCol = grid.nestEntranceCol;
+    const entranceCol = activeGrid.nestEntranceCol;
     const centerRow = STARTING_CHAMBER_CENTER_ROW;
     const startX = entranceCol * CONFIG.CELL_SIZE;
     const startY = centerRow * CONFIG.CELL_SIZE;
@@ -757,8 +680,8 @@ export class ColonyManager {
           let cleared = true;
           for (let c = step.minCol; c <= step.maxCol; c++) {
             for (let r = step.minRow; r <= step.maxRow; r++) {
-              if (grid.isValid(c, r)) {
-                const type = grid.getCell(c, r)?.type;
+              if (activeGrid.isValid(c, r)) {
+                const type = activeGrid.getCell(c, r)?.type;
                 if (type === 'Dirt' || type === 'Rock') {
                   cleared = false;
                   break;

@@ -250,8 +250,8 @@ export class SimulationEngine {
 
     // 4. Update individual ants (and handle lifecycle / aging)
     const queenPos = this.colony.queen;
-    const stockpileRef = { food: this.colony.foodStockpile };
-    
+    const stockpile = this.colony.foodStockpile;
+
     // Pass references to allow state modification
     for (let i = this.colony.ants.length - 1; i >= 0; i--) {
       const ant = this.colony.ants[i];
@@ -329,7 +329,7 @@ export class SimulationEngine {
       ant.update(
         this.grid,
         this.pheromones,
-        stockpileRef,
+        stockpile,
         this.colony.broodList,
         queenPos,
         activeExcavationStep,
@@ -390,9 +390,6 @@ export class SimulationEngine {
     if (this.colony.queen.isDead) {
       this.onGameOverTriggered(this.colony.queen.deathReason || 'unknown');
     }
-
-    // Update back the modified food stockpile value
-    this.colony.foodStockpile = stockpileRef.food;
 
     // Periodically save state (every 300 frames)
     if (Math.random() < 0.003) {

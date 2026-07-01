@@ -1,5 +1,6 @@
 import { CONFIG } from './types';
 import type { AntRole, AntState, AntContext, RoleBehavior, Position, ExcavationStep, AntBrain, FoodType, Brood } from './types';
+import type { IFoodStockpile } from './FoodStockpile';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { findPath } from './Pathfinder';
@@ -173,7 +174,7 @@ export class Ant implements LocomotionEntity, AntContext {
   public update(
     grid: WorldGrid,
     pheromones: PheromoneGrid,
-    stockpile: { food: number },
+    stockpile: IFoodStockpile,
     broodList: readonly Brood[],
     queenPos: Position & { energy?: number },
     activeExcavationStep: ExcavationStep | null,
@@ -309,7 +310,7 @@ export class Ant implements LocomotionEntity, AntContext {
   // --- RESTING / REFUELLING (shared logic — stays in Ant) ---
   private updateResting(
     grid: WorldGrid,
-    stockpile: { food: number },
+    stockpile: IFoodStockpile,
     foodStorages: Position[],
     spawnDebris?: (x: number, y: number, color: string, count?: number) => void
   ) {
@@ -330,8 +331,7 @@ export class Ant implements LocomotionEntity, AntContext {
 
     // If close enough to a food storage, eat and refuel
     if (minDist < 30) {
-      if (stockpile.food >= 0.5) {
-        stockpile.food -= 0.5;
+      if (stockpile.consume(0.5)) {
 
         // Spawn eating animation/debris at the nearest food cell inside this larder
         if (spawnDebris) {
@@ -386,6 +386,8 @@ export class Ant implements LocomotionEntity, AntContext {
       this.desiredPheromone = 'home';
     }
   }
+
+
 
   // --- STEERING AI ---
   private steerWithNeuralNetwork(_grid: WorldGrid, pheromones: PheromoneGrid, speedMultiplier: number) {

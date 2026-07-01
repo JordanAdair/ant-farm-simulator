@@ -3,6 +3,21 @@ import { Ant } from './Ant';
 import { ColonyManager } from './Colony';
 import { WorldGrid } from './Grid';
 import { CONFIG } from './types';
+import type { IFoodStockpile } from './FoodStockpile';
+
+/** Minimal in-memory stockpile for tests that don't need grid-backed food. */
+function makeStockpile(initial: number): IFoodStockpile {
+  let food = initial;
+  return {
+    get total() { return food; },
+    consume(amount: number) {
+      if (food < amount) return false;
+      food -= amount;
+      return true;
+    },
+    deposit(amount: number) { food += amount; },
+  };
+}
 
 describe('Drowning Mechanics', () => {
   it('should decrease worker ant health if submerged in water for more than 5 seconds', () => {
@@ -34,7 +49,7 @@ describe('Drowning Mechanics', () => {
       ant.update(
         grid,
         pheromoneMock,
-        { food: 100 },
+        makeStockpile(100),
         [],
         { x: 100, y: 100 },
         null,
@@ -55,7 +70,7 @@ describe('Drowning Mechanics', () => {
       ant.update(
         grid,
         pheromoneMock,
-        { food: 100 },
+        makeStockpile(100),
         [],
         { x: 100, y: 100 },
         null,

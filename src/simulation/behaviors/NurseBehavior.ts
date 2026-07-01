@@ -5,13 +5,14 @@ import type { WorldGrid } from '../Grid';
 import type { PheromoneGrid } from '../Pheromones';
 import type { BroodManager } from '../BroodManager';
 import type { Threat } from '../Threat';
+import type { IFoodStockpile } from '../FoodStockpile';
 
 export class NurseBehavior implements RoleBehavior {
   update(
     ctx: AntContext,
     grid: WorldGrid,
     _pheromones: PheromoneGrid,
-    stockpile: { food: number },
+    _stockpile: IFoodStockpile,
     broodList: readonly Brood[],
     queenPos: Position & { energy?: number },
     _activeExcavationStep: ExcavationStep | null,
@@ -120,7 +121,6 @@ export class NurseBehavior implements RoleBehavior {
             if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
               ctx.cargoFoodType = cell.foodType || 'Apple';
               cell.foodAmount -= 1;
-              stockpile.food -= 1;
               if (cell.foodAmount <= 0) {
                 cell.type = 'NestAir';
                 cell.foodType = undefined;
@@ -212,7 +212,6 @@ export class NurseBehavior implements RoleBehavior {
             if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
               ctx.cargoFoodType = cell.foodType || 'Apple';
               cell.foodAmount -= 1;
-              stockpile.food -= 1;
               if (cell.foodAmount <= 0) {
                 cell.type = 'NestAir';
                 cell.foodType = undefined;

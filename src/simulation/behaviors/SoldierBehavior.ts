@@ -4,13 +4,14 @@ import type { WorldGrid } from '../Grid';
 import type { PheromoneGrid } from '../Pheromones';
 import type { BroodManager } from '../BroodManager';
 import type { Threat } from '../Threat';
+import type { IFoodStockpile } from '../FoodStockpile';
 
 export class SoldierBehavior implements RoleBehavior {
   update(
     ctx: AntContext,
     grid: WorldGrid,
     pheromones: PheromoneGrid,
-    _stockpile: { food: number },
+    _stockpile: IFoodStockpile,
     _broodList: readonly Brood[],
     queenPos: Position & { energy?: number },
     _activeExcavationStep: ExcavationStep | null,
