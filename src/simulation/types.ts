@@ -304,6 +304,10 @@ export interface GameSnapshot {
   // World grid (serialised as a compact column string)
   gridStr: string;
 
+  // Grid dimensions — required so offline code never needs to touch engine.grid
+  cols: number;
+  rows: number;
+
   // Colony-level fields
   totalDirtDugGlobal: number;
   maxPopulation: number;

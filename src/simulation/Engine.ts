@@ -1392,6 +1392,8 @@ export class SimulationEngine {
       version: 1,
       timestamp: Date.now(),
       gridStr,
+      cols: this.grid.cols,
+      rows: this.grid.rows,
       totalDirtDugGlobal: this.totalDirtDugGlobal,
       maxPopulation: this.colony.maxPopulation,
       maxGenerationReached: this.colony.maxGenerationReached,

@@ -1,5 +1,5 @@
 import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
-import type { AntRole, GameSnapshot } from './types';
+import type { AntRole, CellType, FoodType, GameSnapshot } from './types';
 import { WorldGrid } from './Grid';
 import { SimulationEngine } from './Engine';
 import { createDefaultBrain } from './Ant';
@@ -91,12 +91,12 @@ export class OfflineProgression {
       }
 
       // Normalise legacy saves (version 0 / pre-snapshot) into GameSnapshot shape
-      const snap: GameSnapshot = this.normaliseLegacyOrCurrent(raw, engine.grid.cols, engine.grid.rows);
+      const snap: GameSnapshot = this.normaliseLegacyOrCurrent(raw, raw.cols ?? CONFIG.COLS, raw.rows ?? CONFIG.ROWS);
       if (!snap) return null;
 
       // Check if grid dimensions in save string match current config
       const cols = snap.gridStr.split(',');
-      if (cols.length !== engine.grid.cols || (cols[0] && cols[0].length !== engine.grid.rows)) {
+      if (cols.length !== snap.cols || (cols[0] && cols[0].length !== snap.rows)) {
         console.warn('Saved grid dimensions mismatch. Resetting world grid to new configuration.');
         return null;
       }
@@ -111,9 +111,9 @@ export class OfflineProgression {
 
       // Only simulate if offline for more than 15 seconds
       if (elapsedSeconds > 15) {
-        const { result, updatedSnap } = this.runOfflineCalculations(snap, engine.grid, elapsedSeconds);
+        const { result, updatedSnap } = this.runOfflineCalculations(snap, elapsedSeconds);
         // Apply the mutated snapshot (colony state, clock, weather, ants, queen, brood, logs)
-        // Grid is already correct in engine — we pass it through via updatedSnap.gridStr
+        // Grid state is re-serialised into updatedSnap.gridStr by runOfflineCalculations
         engine.restore(updatedSnap);
         return result;
       }
@@ -201,6 +201,8 @@ export class OfflineProgression {
       version: raw.version ?? 0,
       timestamp: raw.timestamp ?? Date.now(),
       gridStr,
+      cols: gridCols,
+      rows: _gridRows,
       totalDirtDugGlobal: raw.totalDirtDug ?? raw.totalDirtDugGlobal ?? 0,
       maxPopulation: raw.maxPopulation ?? 8,
       maxGenerationReached: raw.maxGenerationReached ?? 1,
@@ -233,9 +235,38 @@ export class OfflineProgression {
 
   private static runOfflineCalculations(
     inputSnap: GameSnapshot,
-    grid: WorldGrid,
     totalSeconds: number
   ): { result: OfflineResult; updatedSnap: GameSnapshot } {
+    // Reconstruct a local WorldGrid from the snapshot so this function
+    // never needs to touch engine.grid directly.
+    const grid = new WorldGrid();
+    const gridCols = inputSnap.gridStr.split(',');
+    for (let c = 0; c < grid.cols; c++) {
+      if (!gridCols[c]) continue;
+      for (let r = 0; r < grid.rows; r++) {
+        const ch = gridCols[c][r];
+        let type: CellType = 'Dirt';
+        let foodAmount = 0;
+        let foodType: FoodType | undefined = undefined;
+        let isMoldy: boolean | undefined = undefined;
+
+        if (ch === 'S') type = 'Sky';
+        else if (ch === 'R') type = 'Rock';
+        else if (ch === 'A') type = 'NestAir';
+        else if (ch === 'W') type = 'Water';
+        else if (ch === 'F' || ch === 'G' || ch === 'C' || ch === 'M' || ch === 'N' || ch === 'O') {
+          type = 'Food';
+          foodAmount = CONFIG.FOOD_PIECE_SIZE;
+          isMoldy = ch === 'M' || ch === 'N' || ch === 'O';
+          if (ch === 'F' || ch === 'M') foodType = 'Apple';
+          else if (ch === 'G' || ch === 'N') foodType = 'Foliage';
+          else if (ch === 'C' || ch === 'O') foodType = 'Carcass';
+        }
+
+        grid.resetCell(c, r, { type, foodAmount, noiseVal: Math.random(), foodType, isMoldy });
+      }
+    }
+
     // Work on a shallow copy so the original is not mutated in-place
     const snap: GameSnapshot = {
       ...inputSnap,

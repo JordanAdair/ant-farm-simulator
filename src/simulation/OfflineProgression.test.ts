@@ -34,6 +34,8 @@ function makeTestSnapshot(grid: WorldGrid): GameSnapshot {
     version: 1,
     timestamp: Date.now(),
     gridStr: OfflineProgression.serializeGrid(grid),
+    cols: grid.cols,
+    rows: grid.rows,
     totalDirtDugGlobal: 10,
     maxPopulation: 8,
     maxGenerationReached: 1,
