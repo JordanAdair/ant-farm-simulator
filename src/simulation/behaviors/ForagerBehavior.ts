@@ -187,7 +187,7 @@ export class ForagerBehavior implements RoleBehavior {
         ctx.desiredPheromone = 'none';
       } else {
         // Underground: steer towards the closest non-full food storage chamber
-        const availableStorage = this.getAvailableStorage(ctx, grid, foodStorages);
+        const availableStorage = this.getAvailableStorage(ctx.x, ctx.y, grid, foodStorages);
         if (availableStorage) {
           ctx.desiredAngle = ctx.getAngleToTarget(grid, availableStorage.x, availableStorage.y);
         } else {
@@ -198,7 +198,7 @@ export class ForagerBehavior implements RoleBehavior {
     }
   }
 
-  private isStorageFull(ctx: AntContext, grid: WorldGrid, storage: Position): boolean {
+  private isStorageFull(grid: WorldGrid, storage: Position): boolean {
     const sCol = Math.floor(storage.x / CONFIG.CELL_SIZE);
     const sRow = Math.floor(storage.y / CONFIG.CELL_SIZE);
     const entranceCol = grid.nestEntranceCol;
@@ -218,17 +218,15 @@ export class ForagerBehavior implements RoleBehavior {
         }
       }
     }
-    // ctx used indirectly via the closure — suppress lint
-    void ctx;
     return true;
   }
 
-  private getAvailableStorage(ctx: AntContext, grid: WorldGrid, foodStorages: Position[]): Position | null {
+  private getAvailableStorage(antX: number, antY: number, grid: WorldGrid, foodStorages: Position[]): Position | null {
     let closest: Position | null = null;
     let minDist = Infinity;
     for (const storage of foodStorages) {
-      if (!this.isStorageFull(ctx, grid, storage)) {
-        const dist = Math.sqrt((ctx.x - storage.x) ** 2 + (ctx.y - storage.y) ** 2);
+      if (!this.isStorageFull(grid, storage)) {
+        const dist = Math.sqrt((antX - storage.x) ** 2 + (antY - storage.y) ** 2);
         if (dist < minDist) {
           minDist = dist;
           closest = storage;

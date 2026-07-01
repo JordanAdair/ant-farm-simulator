@@ -140,7 +140,6 @@ import type { Threat } from './Threat';
  */
 export interface AntContext {
   // Identity & position
-  readonly id: string;
   readonly num: number;
   x: number;
   y: number;
@@ -149,10 +148,8 @@ export interface AntContext {
   state: AntState;
 
   // Resources & cargo
-  energy: number;
   cargo: 'None' | 'Food' | 'Dirt';
   cargoFoodType: FoodType | undefined;
-  hasCargo: boolean;
 
   // Brood carrying
   targetBroodId: string | null;
@@ -165,16 +162,11 @@ export interface AntContext {
   // Pathfinding & timers
   currentPath: Position[] | null;
   collisionCooldown: number;
-  collisionTimer: number;
   diggingChamberTimer: number;
   diggingAngle: number;
   targetDropOffset: number | undefined;
   patrolTarget: Position | null;
   targetThreatId: string | null;
-
-  // Fitness tracking
-  deliveries: number;
-  collisions: number;
 
   // Domain references
   getAngleToTarget(grid: WorldGrid, targetX: number, targetY: number): number;
