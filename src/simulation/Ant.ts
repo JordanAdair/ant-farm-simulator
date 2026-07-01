@@ -1,13 +1,16 @@
-import { CONFIG, STARTING_CHAMBER_CENTER_ROW } from './types';
-import type { AntRole, AntState, Position, ExcavationStep, AntBrain, FoodType } from './types';
-import { isCellInsidePlanStep } from './NestPlanner';
+import { CONFIG } from './types';
+import type { AntRole, AntState, AntContext, RoleBehavior, Position, ExcavationStep, AntBrain, FoodType, Brood } from './types';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { findPath } from './Pathfinder';
 import { moveAndAvoidObstacles, normalizeAngle } from './Locomotion';
 import type { LocomotionEntity } from './Locomotion';
-import { BroodManager, isNurseryFlooded } from './BroodManager';
+import { BroodManager } from './BroodManager';
 import { Threat } from './Threat';
+import { ForagerBehavior } from './behaviors/ForagerBehavior';
+import { DiggerBehavior } from './behaviors/DiggerBehavior';
+import { NurseBehavior } from './behaviors/NurseBehavior';
+import { SoldierBehavior } from './behaviors/SoldierBehavior';
 
 export function createDefaultBrain(): AntBrain {
   return {
@@ -22,16 +25,24 @@ export function createDefaultBrain(): AntBrain {
   };
 }
 
-export class Ant implements LocomotionEntity {
+// Singleton behavior instances (stateless strategy objects)
+const ROLE_BEHAVIORS: Record<AntRole, RoleBehavior> = {
+  Forager: new ForagerBehavior(),
+  Digger: new DiggerBehavior(),
+  Nurse: new NurseBehavior(),
+  Soldier: new SoldierBehavior(),
+};
+
+export class Ant implements LocomotionEntity, AntContext {
   public id: string;
   public x: number;
   public y: number;
   public angle: number;
   public role: AntRole;
   public state: AntState;
-  
+
   public cargo: 'None' | 'Food' | 'Dirt' = 'None';
-  public cargoFoodType?: FoodType;
+  public cargoFoodType: FoodType | undefined = undefined;
   public energy: number = CONFIG.ANT_MAX_ENERGY;
   public homeChamberX: number;
   public homeChamberY: number;
@@ -47,7 +58,7 @@ export class Ant implements LocomotionEntity {
   public collisionTimer: number = 0;
   public diggingChamberTimer: number = 0;
   public diggingAngle: number = Math.PI / 2;
-  public targetDropOffset?: number;
+  public targetDropOffset: number | undefined = undefined;
 
   public num: number;
 
@@ -89,7 +100,7 @@ export class Ant implements LocomotionEntity {
     this.role = role;
     this.state = 'Wandering';
     this.num = num;
-    
+
     this.homeChamberX = startX;
     this.homeChamberY = startY;
 
@@ -100,6 +111,57 @@ export class Ant implements LocomotionEntity {
     this.age = 0;
     this.maxAge = 1200 + Math.random() * 600; // 20 to 30 minutes of life at 1x speed
   }
+
+  // --- AntContext interface implementation ---
+
+  get hasCargo(): boolean {
+    return this.cargo !== 'None';
+  }
+
+  public addDelivery(): void {
+    this.deliveries++;
+  }
+
+  public getAngleToTarget(grid: WorldGrid, targetX: number, targetY: number): number {
+    const CELL_SIZE = CONFIG.CELL_SIZE;
+    const curCol = Math.floor(this.x / CELL_SIZE);
+    const curRow = Math.floor(this.y / CELL_SIZE);
+    const targetCol = Math.floor(targetX / CELL_SIZE);
+    const targetRow = Math.floor(targetY / CELL_SIZE);
+
+    // If target changed, or no path, recalculate
+    if (!this.currentPath || !this.pathTarget || this.pathTarget.x !== targetCol || this.pathTarget.y !== targetRow) {
+      this.currentPath = findPath(grid, curCol, curRow, targetCol, targetRow) || [];
+      this.pathTarget = { x: targetCol, y: targetRow };
+    }
+
+    if (this.currentPath && this.currentPath.length > 0) {
+      // Steer towards next waypoint
+      const nextWP = this.currentPath[0];
+      const dx = nextWP.x - this.x;
+      const dy = nextWP.y - this.y;
+
+      const curCol = Math.floor(this.x / CELL_SIZE);
+      const curRow = Math.floor(this.y / CELL_SIZE);
+      const wpCol = Math.floor(nextWP.x / CELL_SIZE);
+      const wpRow = Math.floor(nextWP.y / CELL_SIZE);
+
+      // Pop the waypoint if we've entered its cell, or if we're extremely close
+      if ((curCol === wpCol && curRow === wpRow) || (dx * dx + dy * dy < CELL_SIZE * CELL_SIZE)) {
+        this.currentPath.shift();
+        if (this.currentPath.length > 0) {
+          const nextNext = this.currentPath[0];
+          return Math.atan2(nextNext.y - this.y, nextNext.x - this.x);
+        }
+      }
+      return Math.atan2(dy, dx);
+    }
+
+    // Fallback if no path found (should be rare)
+    return Math.atan2(targetY - this.y, targetX - this.x);
+  }
+
+  // --- End AntContext interface ---
 
   public getFitness(): number {
     let weight = 10;
@@ -112,8 +174,8 @@ export class Ant implements LocomotionEntity {
     grid: WorldGrid,
     pheromones: PheromoneGrid,
     stockpile: { food: number },
-    _broodList: readonly unknown[],
-    queenPos: Position,
+    broodList: readonly Brood[],
+    queenPos: Position & { energy?: number },
     activeExcavationStep: ExcavationStep | null,
     activeExcavationTarget: Position | null,
     nurseries: Position[],
@@ -183,7 +245,7 @@ export class Ant implements LocomotionEntity {
           }
         }
       }
-      
+
       if (minThreatDist < 60 && closestThreat) {
         isFleeing = true;
         this.desiredAngle = Math.atan2(this.y - closestThreat.y, this.x - closestThreat.x);
@@ -192,24 +254,26 @@ export class Ant implements LocomotionEntity {
       }
     }
 
-    // Role state machines
+    // Role dispatch via behavior strategy pattern
     if (this.state === 'Resting') {
       this.updateResting(grid, stockpile, foodStorages, spawnDebris);
     } else if (!isFleeing) {
-      switch (this.role) {
-        case 'Forager':
-          this.updateForager(grid, pheromones, stockpile, foodStorages, spawnDebris);
-          break;
-        case 'Digger':
-          this.updateDigger(grid, pheromones, activeExcavationStep, activeExcavationTarget);
-          break;
-        case 'Nurse':
-          this.updateNurse(grid, stockpile, queenPos, nurseries, foodStorages, broodManager, speedMultiplier, spawnDebris);
-          break;
-        case 'Soldier':
-          this.updateSoldier(grid, pheromones, threats, queenPos, nurseries, speedMultiplier, spawnDebris);
-          break;
-      }
+      ROLE_BEHAVIORS[this.role].update(
+        this,
+        grid,
+        pheromones,
+        stockpile,
+        broodList,
+        queenPos,
+        activeExcavationStep,
+        activeExcavationTarget,
+        nurseries,
+        foodStorages,
+        broodManager,
+        speedMultiplier,
+        threats,
+        spawnDebris
+      );
     }
 
     // Clamp desiredAngle on the surface (outside the shaft zone) to horizontal boundaries (max slope of 35 degrees)
@@ -242,7 +306,7 @@ export class Ant implements LocomotionEntity {
     moveAndAvoidObstacles(this, grid, speed);
   }
 
-  // --- RESTING / REFUELLING ---
+  // --- RESTING / REFUELLING (shared logic — stays in Ant) ---
   private updateResting(
     grid: WorldGrid,
     stockpile: { food: number },
@@ -298,7 +362,7 @@ export class Ant implements LocomotionEntity {
             let color = 'hsl(0, 80%, 48%)';
             if (cell?.foodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
             else if (cell?.foodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-            
+
             spawnDebris(closestFoodCell.x, closestFoodCell.y, color, 3);
           }
         }
@@ -314,698 +378,13 @@ export class Ant implements LocomotionEntity {
     // Go back to the nest
     if (row < CONFIG.SKY_HEIGHT) {
       // On surface: head to entrance
-      this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
+      this.desiredAngle = this.getAngleToTarget(grid, entranceX, entranceY);
       this.desiredPheromone = 'none';
     } else {
       // Underground: head to closest food storage
-      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
+      this.desiredAngle = this.getAngleToTarget(grid, closestStorage.x, closestStorage.y);
       this.desiredPheromone = 'home';
     }
-  }
-
-  // --- FORAGER BEHAVIOR ---
-  private updateForager(
-    grid: WorldGrid,
-    pheromones: PheromoneGrid,
-    stockpile: { food: number },
-    foodStorages: Position[],
-    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
-  ) {
-    const col = Math.floor(this.x / CONFIG.CELL_SIZE);
-    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
-
-    if (this.cargo === 'None') {
-      this.state = 'SearchingForFood';
-      
-      // Lay home pheromone to mark path back
-      pheromones.addHomePheromone(col, row, CONFIG.PHEROMONE_LAY_STRENGTH * 0.5);
-
-      // State check: check if standing on or adjacent to food (ALWAYS run this check)
-      const scanCoords = [
-        [col, row],       // Current cell
-        [col, row - 1],   // Up
-        [col, row + 1],   // Down
-        [col - 1, row],   // Left
-        [col + 1, row],   // Right
-      ];
-
-      for (const [tc, tr] of scanCoords) {
-        if (grid.isValid(tc, tr)) {
-          const cell = grid.getCell(tc, tr);
-          if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
-            this.cargoFoodType = cell.foodType || 'Apple';
-            const removed = Math.min(CONFIG.FOOD_PIECE_SIZE, cell.foodAmount);
-            grid.removeFood(tc, tr, removed, 'Sky');
-            if (spawnDebris) {
-              let color = 'hsl(0, 80%, 48%)';
-              if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
-              else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-              spawnDebris(tc * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, tr * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 4);
-            }
-            this.cargo = 'Food';
-            this.state = 'ReturningToNest';
-            this.angle += Math.PI; // turn around
-            this.collisionCooldown = 0; // reset cooldown to navigate back
-            return;
-          }
-        }
-      }
-
-      // Restrict direct food-sensing to foragers already on the surface to prevent underground ants pathing through ceilings
-      const closestFood = row < CONFIG.SKY_HEIGHT + 2 ? grid.getClosestFood(this.x, this.y) : null;
-      if (closestFood) {
-        // Steer directly to food if close enough
-        const dx = closestFood.x - this.x;
-        const dy = closestFood.y - this.y;
-        this.desiredAngle = Math.atan2(dy, dx);
-        this.desiredPheromone = 'none';
-      } else {
-        // Follow food pheromone trail
-        this.desiredPheromone = 'food';
-        // Add random wander bias to desiredAngle when searching to prevent straight-line drift to edges
-        let wanderAngle = this.angle + (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
-
-        // Pull back towards nest center column if too far horizontally to prevent edge-drifting
-        const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        const distToEntrance = Math.abs(this.x - entranceX);
-        const maxSearchDist = 120 * CONFIG.CELL_SIZE; // 480px, about 30% of screen width from center
-        
-        if (distToEntrance > maxSearchDist) {
-          const dirToNest = entranceX > this.x ? 0 : Math.PI;
-          let diff = dirToNest - wanderAngle;
-          diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-          wanderAngle += diff * 0.15; // 15% blend rate towards nest direction
-        } else if (distToEntrance < 15 * CONFIG.CELL_SIZE) {
-          // Push away from nest entrance when searching for food to prevent falling back in and oscillating!
-          const dirAwayFromNest = this.x > entranceX ? 0 : Math.PI;
-          let diff = dirAwayFromNest - wanderAngle;
-          diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-          wanderAngle += diff * 0.25; // 25% blend rate away from nest
-        }
-
-        this.desiredAngle = wanderAngle;
-      }
-
-      // If underground and searching for food, steer towards the exit shaft (up and horizontal center)
-      if (row >= CONFIG.SKY_HEIGHT + 2) {
-        const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        const distToShaft = Math.abs(this.x - entranceX);
-        if (distToShaft > CONFIG.CELL_SIZE * 2) {
-          // Walk horizontally to central shaft first
-          const shaftDir = entranceX > this.x ? 1 : -1;
-          this.desiredAngle = shaftDir === 1 ? 0 : Math.PI;
-        } else {
-          // Steer straight up in central shaft
-          this.desiredAngle = -Math.PI / 2;
-        }
-        this.desiredPheromone = 'none';
-      }
-
-    } else if (this.cargo === 'Food') {
-      this.state = 'ReturningToNest';
-
-      // Lay food pheromone trail on the way back
-      pheromones.addFoodPheromone(col, row, CONFIG.PHEROMONE_LAY_STRENGTH);
-
-      // State check: if close to any excavated food storage chamber, deposit food (ALWAYS run this check)
-
-      let closestStorage = foodStorages[0];
-      let minDistVal = Infinity;
-      for (const storage of foodStorages) {
-        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-        if (dist < minDistVal) {
-          minDistVal = dist;
-          closestStorage = storage;
-        }
-      }
-
-      if (minDistVal < 30) {
-        // Physical deposit into closestStorage
-        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
-        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
-        const entranceCol = grid.nestEntranceCol;
-        const centerRow = STARTING_CHAMBER_CENTER_ROW;
-        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-        
-        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
-        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
-        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
-        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
-
-        let deposited = false;
-        for (let c = minCol; c <= maxCol; c++) {
-          for (let r = minRow; r <= maxRow; r++) {
-            if (grid.isValid(c, r) && grid.getCell(c, r)?.type === 'NestAir') {
-              grid.convertToFood(c, r, CONFIG.FOOD_PIECE_SIZE, this.cargoFoodType || 'Apple');
-
-              if (spawnDebris) {
-                let color = 'hsl(0, 80%, 48%)';
-                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
-                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 4);
-              }
-              deposited = true;
-              break;
-            }
-          }
-          if (deposited) break;
-        }
-
-        if (deposited) {
-          stockpile.food += CONFIG.FOOD_PIECE_SIZE;
-          this.cargo = 'None';
-          this.cargoFoodType = undefined;
-          this.state = 'SearchingForFood';
-          this.angle += Math.PI;
-          this.collisionCooldown = 0; // reset cooldown to navigate out
-          this.deliveries++;
-          return;
-        }
-      }
-
-      const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-
-      if (row < CONFIG.SKY_HEIGHT) {
-        // On surface: head to entrance
-        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
-        this.desiredPheromone = 'none';
-      } else {
-        // Underground: steer towards the closest non-full food storage chamber
-        const availableStorage = this.getAvailableStorage(grid, foodStorages);
-        if (availableStorage) {
-          this.desiredAngle = this.getAngleTowardsTarget(grid, availableStorage.x, availableStorage.y);
-        } else {
-          this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
-        }
-        this.desiredPheromone = 'home';
-      }
-    }
-  }
-
-  // --- DIGGER BEHAVIOR ---
-  private updateDigger(
-    grid: WorldGrid,
-    _pheromones: PheromoneGrid,
-    activeExcavationStep: ExcavationStep | null,
-    activeExcavationTarget: Position | null
-  ) {
-    const col = Math.floor(this.x / CONFIG.CELL_SIZE);
-    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
-
-    if (this.cargo === 'None') {
-      this.state = 'DiggingTunnel';
-
-      if (this.diggingChamberTimer > 0) {
-        this.diggingChamberTimer--;
-      }
-
-      // State check: look for adjacent dirt to dig (ALWAYS run this check)
-      const directions = [
-        [0, 1],   // Down
-        [1, 0],   // Right
-        [-1, 0],  // Left
-        [0, -1],  // Up
-      ];
-      directions.sort(() => Math.random() - 0.5);
-
-      for (const [dc, dr] of directions) {
-        const tc = col + dc;
-        const tr = row + dr;
-        // Don't dig above sky height, and don't dig too close to the surface to preserve nest roof
-        if (tr >= CONFIG.SKY_HEIGHT + 5 && grid.isDiggable(tc, tr)) {
-          // If we have an active coordinated plan, ONLY dig if the cell is inside the plan boundary!
-          if (activeExcavationStep && !isCellInsidePlanStep(activeExcavationStep, tc, tr)) {
-            continue; // Skip this block, it is outside the planned construction zone
-          }
-
-          // Count walkable neighbors in 3x3 grid around target to enforce neat tunnels & chambers
-          let walkableNeighbors = 0;
-          for (let nCol = -1; nCol <= 1; nCol++) {
-            for (let nRow = -1; nRow <= 1; nRow++) {
-              if (nCol === 0 && nRow === 0) continue;
-              if (grid.isWalkable(tc + nCol, tr + nRow)) {
-                walkableNeighbors++;
-              }
-            }
-          }
-
-          const isChamberMode = this.diggingChamberTimer > 0;
-          // Normal corridor tunnel width is constrained (<= 3 walkable neighbors).
-          // Chamber mode allows wider clearing (<= 6 walkable neighbors).
-          // If there is an active coordinated excavation plan, we do NOT restrict width,
-          // because the plan bounding box itself defines the shape/width of the rooms and shafts!
-          const maxAllowedNeighbors = activeExcavationStep ? 8 : (isChamberMode ? 6 : 3);
-
-          if (walkableNeighbors <= maxAllowedNeighbors) {
-            grid.digCell(tc, tr);
-            this.cargo = 'Dirt';
-            this.state = 'CarryingDirt';
-            this.angle += Math.PI;
-            this.collisionCooldown = 0; // reset cooldown to navigate back
-
-            // 1.5% chance to start excavating a room (chamber) when digging deep underground (only when not in active coordinated plan)
-            if (!activeExcavationStep && !isChamberMode && tr > CONFIG.SKY_HEIGHT + 15 && Math.random() < 0.015) {
-              this.diggingChamberTimer = 180; // excavate a chamber for 180 frames
-            }
-            return;
-          }
-        }
-      }
-
-      // If we are looking for a job but couldn't find any adjacent dirt inside the active plan,
-      // and we have an active coordinated target:
-      // Tunnel directly towards the target to establish connectivity!
-      if (activeExcavationTarget) {
-        const targetCol = Math.floor(activeExcavationTarget.x / CONFIG.CELL_SIZE);
-        const targetRow = Math.floor(activeExcavationTarget.y / CONFIG.CELL_SIZE);
-        
-        const distToTarget = Math.sqrt((col - targetCol) ** 2 + (row - targetRow) ** 2);
-        
-        // Check if there is any walkable cell that gets us closer
-        let canWalkCloser = false;
-        for (const [dc, dr] of directions) {
-          const tc = col + dc;
-          const tr = row + dr;
-          if (grid.isWalkable(tc, tr)) {
-            const newDist = Math.sqrt((tc - targetCol) ** 2 + (tr - targetRow) ** 2);
-            if (newDist < distToTarget) {
-              canWalkCloser = true;
-              break;
-            }
-          }
-        }
-
-        if (!canWalkCloser) {
-          let bestColOffset = 0;
-          let bestRowOffset = 0;
-          let minNewDist = distToTarget;
-
-          for (const [dc, dr] of directions) {
-            const tc = col + dc;
-            const tr = row + dr;
-            if (tr >= CONFIG.SKY_HEIGHT + 5 && grid.isDiggable(tc, tr)) {
-              const newDist = Math.sqrt((tc - targetCol) ** 2 + (tr - targetRow) ** 2);
-              if (newDist < minNewDist) {
-                minNewDist = newDist;
-                bestColOffset = dc;
-                bestRowOffset = dr;
-              }
-            }
-          }
-
-          if (bestColOffset !== 0 || bestRowOffset !== 0) {
-            const tc = col + bestColOffset;
-            const tr = row + bestRowOffset;
-            grid.digCell(tc, tr);
-            this.cargo = 'Dirt';
-            this.state = 'CarryingDirt';
-            this.angle += Math.PI;
-            this.collisionCooldown = 0;
-            return;
-          }
-        }
-      }
-
-      if (row < CONFIG.SKY_HEIGHT) {
-        // On surface: head back to the nest entrance
-        const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-        const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
-        this.desiredPheromone = 'none';
-      } else {
-        // Underground: steer towards active construction zone, or follow preferred digging direction
-        if (activeExcavationStep) {
-          // Target the closest active excavation target solid cell, fallback to center of planned box
-          let targetX = ((activeExcavationStep.minCol + activeExcavationStep.maxCol) / 2) * CONFIG.CELL_SIZE;
-          let targetY = ((activeExcavationStep.minRow + activeExcavationStep.maxRow) / 2) * CONFIG.CELL_SIZE;
-          if (activeExcavationTarget) {
-            targetX = activeExcavationTarget.x;
-            targetY = activeExcavationTarget.y;
-          }
-          this.desiredAngle = this.getAngleTowardsTarget(grid, targetX, targetY);
-          this.desiredPheromone = 'none';
-        } else {
-          if (this.diggingAngle === undefined) {
-            this.diggingAngle = Math.PI / 2;
-          }
-          // Small chance to change tunnel direction deep underground to create forks/branches
-          if (Math.random() < 0.015 && row > CONFIG.SKY_HEIGHT + 8) {
-            const choices = [Math.PI / 2, Math.PI / 2 - 0.5, Math.PI / 2 + 0.5, 0, Math.PI];
-            this.diggingAngle = choices[Math.floor(Math.random() * choices.length)];
-          }
-          this.desiredAngle = this.diggingAngle;
-          this.desiredPheromone = 'none';
-        }
-      }
-
-    } else if (this.cargo === 'Dirt') {
-      this.state = 'CarryingDirt';
-
-      const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-
-      // State check: on surface, walk away from entrance and drop dirt (ALWAYS run this check)
-      if (row < CONFIG.SKY_HEIGHT) {
-        if (this.targetDropOffset === undefined) {
-          this.targetDropOffset = 8 + Math.floor(Math.random() * 16); // 8 to 24 cells
-        }
-        const distToEntrance = Math.abs(this.x - entranceX);
-        if (distToEntrance >= this.targetDropOffset * CONFIG.CELL_SIZE) {
-          // Drop dirt
-          grid.depositDirt(col);
-          this.cargo = 'None';
-          this.state = 'DiggingTunnel';
-          this.angle += Math.PI;
-          this.collisionCooldown = 0; // reset cooldown to navigate back
-          this.deliveries++;
-          this.targetDropOffset = undefined; // reset
-          return;
-        }
-      }
-
-      if (row >= CONFIG.SKY_HEIGHT) {
-        // Underground: find path up.
-        this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
-        this.desiredPheromone = 'home';
-      } else {
-        // On surface: move away from entrance (either left or right)
-        const dir = this.x < entranceX ? -1 : 1;
-        this.desiredAngle = dir === -1 ? Math.PI : 0;
-        this.desiredPheromone = 'none';
-      }
-    }
-  }
-
-  // --- NURSE BEHAVIOR ---
-  private updateNurse(
-    grid: WorldGrid,
-    stockpile: { food: number },
-    queenPos: Position & { energy?: number },
-    nurseries: Position[],
-    foodStorages: Position[],
-    broodManager: BroodManager,
-    speedMultiplier: number,
-    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
-  ) {
-    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
-
-    // If on surface, prioritize navigating back into the nest entrance
-    if (row < CONFIG.SKY_HEIGHT) {
-      this.state = 'Wandering';
-      const entranceX = grid.nestEntranceCol * CONFIG.CELL_SIZE;
-      const entranceY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
-      this.desiredAngle = this.getAngleTowardsTarget(grid, entranceX, entranceY);
-      this.desiredPheromone = 'none';
-
-      // If carrying a brood on the surface, update its position along with the nurse
-      if (this.isHoldingBrood && this.targetBroodId) {
-        broodManager.moveBroodWithCarrier(this.targetBroodId, { x: this.x, y: this.y });
-      }
-      return;
-    }
-
-    // State check: if holding brood, carry it to safe chamber (ALWAYS run this check)
-    if (this.isHoldingBrood && this.targetBroodId) {
-      this.state = 'Nursing';
-      const brood = broodManager.getBroodById(this.targetBroodId);
-
-      if (brood) {
-        // Select nursery target based on occupancy and dryness
-        const targetNursery = broodManager.getAvailableDryNursery(grid, nurseries) || nurseries.find(n => !isNurseryFlooded(grid, n)) || nurseries[Math.abs(this.num) % nurseries.length];
-
-        const spacedPos = targetNursery ? broodManager.findSpacedPositionInNursery(grid, targetNursery) : null;
-        // Add a small individual offset so they don't pile exactly on one pixel if no spaced position found
-        const targetX = spacedPos ? spacedPos.x : (targetNursery ? targetNursery.x + (this.num % 2 === 0 ? 10 : -10) + (this.num % 3) * 5 : this.x);
-        const targetY = spacedPos ? spacedPos.y : (targetNursery ? targetNursery.y + 4 : this.y);
-
-        // Update brood pos to match nurse while carrying
-        broodManager.moveBroodWithCarrier(this.targetBroodId, { x: this.x, y: this.y });
-
-        const dx = targetX - this.x;
-        const dy = targetY - this.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < 10) {
-          // Drop it at current position
-          broodManager.placeBrood(this.targetBroodId, { x: this.x, y: this.y });
-          this.isHoldingBrood = false;
-          this.targetBroodId = null;
-          this.collisionCooldown = 0;
-          this.deliveries++;
-          return;
-        }
-
-        this.desiredAngle = this.getAngleTowardsTarget(grid, targetX, targetY);
-        this.desiredPheromone = 'none';
-      } else {
-        this.isHoldingBrood = false;
-        this.targetBroodId = null;
-      }
-      return;
-    }
-
-    // State check: Queen hunger has top priority
-    const isQueenHungry = queenPos.energy !== undefined && queenPos.energy < 75;
-
-    if (isQueenHungry && this.cargo === 'None' && !this.isHoldingBrood) {
-      this.state = 'Nursing';
-
-      let closestStorage = foodStorages[0];
-      let minDist = Infinity;
-      for (const storage of foodStorages) {
-        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-        if (dist < minDist) {
-          minDist = dist;
-          closestStorage = storage;
-        }
-      }
-
-      if (minDist < 20) {
-        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
-        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
-        const entranceCol = grid.nestEntranceCol;
-        const centerRow = STARTING_CHAMBER_CENTER_ROW;
-        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-
-        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
-        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
-        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
-        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
-
-        let foundCell = false;
-        for (let c = minCol; c <= maxCol; c++) {
-          for (let r = minRow; r <= maxRow; r++) {
-            const cell = grid.getCell(c, r);
-            if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
-              this.cargoFoodType = cell.foodType || 'Apple';
-              grid.removeFood(c, r, 1);
-              stockpile.food -= 1;
-
-              if (spawnDebris) {
-                let color = 'hsl(0, 80%, 48%)';
-                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
-                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 3);
-              }
-
-              this.cargo = 'Food';
-              this.collisionCooldown = 0;
-              foundCell = true;
-              break;
-            }
-          }
-          if (foundCell) break;
-        }
-        if (foundCell) return;
-      }
-
-      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
-      this.desiredPheromone = 'none';
-      return;
-    }
-
-    if (this.cargo === 'Food' && isQueenHungry) {
-      this.state = 'Nursing';
-      const dx = queenPos.x - this.x;
-      const dy = queenPos.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 12) {
-        if (queenPos.energy !== undefined) {
-          queenPos.energy = Math.min(100, queenPos.energy + 25);
-        }
-        this.cargo = 'None';
-        this.cargoFoodType = undefined;
-        this.collisionCooldown = 0;
-        this.deliveries++;
-
-        if (spawnDebris) {
-          spawnDebris(queenPos.x, queenPos.y, 'hsl(0, 80%, 48%)', 4);
-        }
-        return;
-      }
-
-      this.desiredAngle = this.getAngleTowardsTarget(grid, queenPos.x, queenPos.y);
-      this.desiredPheromone = 'none';
-      return;
-    }
-
-    // State check: if hungry larva exists and nurse has no cargo, go get food (ALWAYS run this check)
-    const hungryLarvae = broodManager.getHungryLarvae();
-    const hungryLarva = hungryLarvae.length > 0 ? hungryLarvae[0] : null;
-
-    if (hungryLarva && this.cargo === 'None') {
-      this.state = 'Nursing';
-
-      // Find the closest food storage chamber
-      let closestStorage = foodStorages[0];
-      let minDist = Infinity;
-      for (const storage of foodStorages) {
-        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-        if (dist < minDist) {
-          minDist = dist;
-          closestStorage = storage;
-        }
-      }
-
-      // Go to food storage to get food
-      if (minDist < 20) {
-        const sCol = Math.floor(closestStorage.x / CONFIG.CELL_SIZE);
-        const sRow = Math.floor(closestStorage.y / CONFIG.CELL_SIZE);
-        const entranceCol = grid.nestEntranceCol;
-        const centerRow = STARTING_CHAMBER_CENTER_ROW;
-        const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-
-        const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
-        const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
-        const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
-        const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
-
-        let foundCell = false;
-        for (let c = minCol; c <= maxCol; c++) {
-          for (let r = minRow; r <= maxRow; r++) {
-            const cell = grid.getCell(c, r);
-            if (cell && cell.type === 'Food' && cell.foodAmount > 0) {
-              this.cargoFoodType = cell.foodType || 'Apple';
-              grid.removeFood(c, r, 1);
-              stockpile.food -= 1;
-
-              if (spawnDebris) {
-                let color = 'hsl(0, 80%, 48%)';
-                if (this.cargoFoodType === 'Foliage') color = 'hsl(102, 55%, 35%)';
-                else if (this.cargoFoodType === 'Carcass') color = 'hsl(280, 60%, 40%)';
-                spawnDebris(c * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, r * CONFIG.CELL_SIZE + CONFIG.CELL_SIZE / 2, color, 3);
-              }
-
-              this.cargo = 'Food';
-              this.collisionCooldown = 0;
-              foundCell = true;
-              break;
-            }
-          }
-          if (foundCell) break;
-        }
-        if (foundCell) return;
-      }
-
-      this.desiredAngle = this.getAngleTowardsTarget(grid, closestStorage.x, closestStorage.y);
-      this.desiredPheromone = 'none';
-      return;
-    }
-
-    // State check: feed the hungry larva (ALWAYS run this check)
-    if (this.cargo === 'Food' && hungryLarva) {
-      this.state = 'Nursing';
-      const dx = hungryLarva.x - this.x;
-      const dy = hungryLarva.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 10) {
-        broodManager.feedLarva(hungryLarva.id);
-        this.cargo = 'None';
-        this.cargoFoodType = undefined;
-        this.collisionCooldown = 0;
-        this.deliveries++;
-
-        if (spawnDebris) {
-          spawnDebris(hungryLarva.x, hungryLarva.y, 'hsl(0, 80%, 48%)', 4);
-        }
-        return;
-      }
-
-      this.desiredAngle = this.getAngleTowardsTarget(grid, hungryLarva.x, hungryLarva.y);
-      this.desiredPheromone = 'none';
-      return;
-    }
-
-    // Idle Nurse Redistribution Check
-    if (this.cargo === 'None' && !this.isHoldingBrood) {
-      let nearNursery: Position | null = null;
-      for (const nursery of nurseries) {
-        const dist = Math.sqrt((this.x - nursery.x) ** 2 + (this.y - nursery.y) ** 2);
-        if (dist < 40) {
-          nearNursery = nursery;
-          break;
-        }
-      }
-
-      if (nearNursery && broodManager.isNurseryCrowded(nearNursery)) {
-        const bestAlt = broodManager.getAvailableNursery(nurseries);
-        if (bestAlt && (bestAlt.x !== nearNursery.x || bestAlt.y !== nearNursery.y)) {
-          const currOccupancy = broodManager.getNurseryOccupancy(nearNursery);
-          const altOccupancy = broodManager.getNurseryOccupancy(bestAlt);
-
-          if (currOccupancy - altOccupancy >= 3 && Math.random() < 0.20 * speedMultiplier) {
-            const itemsInNursery = broodManager.getBroodInNursery(nearNursery);
-
-            if (itemsInNursery.length > 0) {
-              const targetItem = itemsInNursery[Math.floor(Math.random() * itemsInNursery.length)];
-              broodManager.pickUpBrood(targetItem.id);
-              this.isHoldingBrood = true;
-              this.targetBroodId = targetItem.id;
-              this.collisionCooldown = 0;
-              this.state = 'Nursing';
-              return;
-            }
-          }
-        }
-      }
-    }
-
-    // State check: pick up misplaced or flooded brood (ALWAYS run this check)
-    const strayBroodList = broodManager.getStrayBrood(grid, nurseries);
-    const strayBrood = strayBroodList.length > 0 ? strayBroodList[0] : null;
-
-    if (strayBrood && !this.isHoldingBrood && this.cargo === 'None') {
-      this.state = 'Nursing';
-      const dx = strayBrood.x - this.x;
-      const dy = strayBrood.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 8) {
-        broodManager.pickUpBrood(strayBrood.id);
-        this.isHoldingBrood = true;
-        this.targetBroodId = strayBrood.id;
-        this.collisionCooldown = 0;
-        return;
-      }
-
-      this.desiredAngle = this.getAngleTowardsTarget(grid, strayBrood.x, strayBrood.y);
-      this.desiredPheromone = 'none';
-      return;
-    }
-
-    // Default: wander around the Queen or Brood area
-    this.state = 'Wandering';
-
-    const distToQueen = Math.sqrt((this.x - queenPos.x) ** 2 + (this.y - queenPos.y) ** 2);
-    if (distToQueen > 80) {
-      this.desiredAngle = this.getAngleTowardsTarget(grid, queenPos.x, queenPos.y);
-    } else {
-      this.desiredAngle = this.angle + (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
-    }
-    this.desiredPheromone = 'none';
   }
 
   // --- STEERING AI ---
@@ -1079,161 +458,5 @@ export class Ant implements LocomotionEntity {
       this.angle += output * 0.15 * speedMultiplier;
     }
     this.angle = normalizeAngle(this.angle);
-  }
-
-  private getAngleTowardsTarget(grid: WorldGrid, targetX: number, targetY: number): number {
-    const CELL_SIZE = CONFIG.CELL_SIZE;
-    const curCol = Math.floor(this.x / CELL_SIZE);
-    const curRow = Math.floor(this.y / CELL_SIZE);
-    const targetCol = Math.floor(targetX / CELL_SIZE);
-    const targetRow = Math.floor(targetY / CELL_SIZE);
-
-    // If target changed, or no path, recalculate
-    if (!this.currentPath || !this.pathTarget || this.pathTarget.x !== targetCol || this.pathTarget.y !== targetRow) {
-      this.currentPath = findPath(grid, curCol, curRow, targetCol, targetRow) || [];
-      this.pathTarget = { x: targetCol, y: targetRow };
-    }
-
-    if (this.currentPath && this.currentPath.length > 0) {
-      // Steer towards next waypoint
-      const nextWP = this.currentPath[0];
-      const dx = nextWP.x - this.x;
-      const dy = nextWP.y - this.y;
-      
-      const curCol = Math.floor(this.x / CELL_SIZE);
-      const curRow = Math.floor(this.y / CELL_SIZE);
-      const wpCol = Math.floor(nextWP.x / CELL_SIZE);
-      const wpRow = Math.floor(nextWP.y / CELL_SIZE);
-
-      // Pop the waypoint if we've entered its cell, or if we're extremely close
-      if ((curCol === wpCol && curRow === wpRow) || (dx * dx + dy * dy < CELL_SIZE * CELL_SIZE)) {
-        this.currentPath.shift();
-        if (this.currentPath.length > 0) {
-          const nextNext = this.currentPath[0];
-          return Math.atan2(nextNext.y - this.y, nextNext.x - this.x);
-        }
-      }
-      return Math.atan2(dy, dx);
-    }
-
-    // Fallback if no path found (should be rare)
-    return Math.atan2(targetY - this.y, targetX - this.x);
-  }
-
-  private isStorageFull(grid: WorldGrid, storage: Position): boolean {
-    const sCol = Math.floor(storage.x / CONFIG.CELL_SIZE);
-    const sRow = Math.floor(storage.y / CONFIG.CELL_SIZE);
-    const entranceCol = grid.nestEntranceCol;
-    const centerRow = STARTING_CHAMBER_CENTER_ROW;
-
-    // Check if it's the starting Queen larder
-    const isStartingLarder = Math.abs(sCol - (entranceCol + 10)) <= 2 && Math.abs(sRow - (centerRow + 1)) <= 2;
-    
-    const minCol = isStartingLarder ? entranceCol + 5 : sCol - 9;
-    const maxCol = isStartingLarder ? entranceCol + 15 : sCol + 9;
-    const minRow = isStartingLarder ? centerRow - 3 : sRow - 2;
-    const maxRow = isStartingLarder ? centerRow + 3 : sRow + 2;
-
-    for (let c = minCol; c <= maxCol; c++) {
-      for (let r = minRow; r <= maxRow; r++) {
-        if (grid.isValid(c, r) && grid.getCell(c, r)?.type === 'NestAir') {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  private getAvailableStorage(grid: WorldGrid, foodStorages: Position[]): Position | null {
-    let closest: Position | null = null;
-    let minDist = Infinity;
-    for (const storage of foodStorages) {
-      if (!this.isStorageFull(grid, storage)) {
-        const dist = Math.sqrt((this.x - storage.x) ** 2 + (this.y - storage.y) ** 2);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = storage;
-        }
-      }
-    }
-    return closest;
-  }
-
-  private updateSoldier(
-    grid: WorldGrid,
-    pheromones: PheromoneGrid,
-    threats: Threat[],
-    queenPos: Position,
-    nurseries: Position[],
-    speedMultiplier: number,
-    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
-  ) {
-    // 1. Search for closest threat within 120 pixels
-    let closestThreat: Threat | null = null;
-    let minDist = Infinity;
-    for (const threat of threats) {
-      if (!threat.isDead) {
-        const dist = Math.sqrt((threat.x - this.x) ** 2 + (threat.y - this.y) ** 2);
-        if (dist < minDist) {
-          minDist = dist;
-          closestThreat = threat;
-        }
-      }
-    }
-
-    if (minDist < 120 && closestThreat) {
-      this.state = 'Attacking';
-      this.targetThreatId = closestThreat.id;
-
-      const dx = closestThreat.x - this.x;
-      const dy = closestThreat.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist <= CONFIG.ATTACK_RANGE + 4) {
-        // Attack target
-        closestThreat.health = Math.max(0, closestThreat.health - CONFIG.SOLDIER_DAMAGE * speedMultiplier);
-        if (spawnDebris && Math.random() < 0.3) {
-          spawnDebris(closestThreat.x, closestThreat.y, 'hsl(0, 85%, 45%)', 2);
-        }
-        
-        // Emit danger pheromones to alert other soldiers
-        const col = Math.floor(this.x / CONFIG.CELL_SIZE);
-        const row = Math.floor(this.y / CONFIG.CELL_SIZE);
-        pheromones.addDangerPheromone(col, row, CONFIG.PHEROMONE_LAY_STRENGTH * 1.5);
-      } else {
-        // Move towards threat
-        this.desiredAngle = this.getAngleTowardsTarget(grid, closestThreat.x, closestThreat.y);
-        this.desiredPheromone = 'none';
-      }
-      return;
-    }
-
-    // 2. If no direct threat is nearby, follow danger pheromone trail
-    const col = Math.floor(this.x / CONFIG.CELL_SIZE);
-    const row = Math.floor(this.y / CONFIG.CELL_SIZE);
-    const dangerVal = pheromones.getDangerPheromone(col, row);
-    if (dangerVal > 0.1) {
-      this.state = 'Patrolling';
-      this.desiredPheromone = 'danger';
-      this.desiredAngle = this.angle + (Math.random() - 0.5) * CONFIG.ANT_WANDER_STRENGTH;
-      return;
-    }
-
-    // 3. Patrol nurseries, nest entrance, or Queen
-    this.state = 'Patrolling';
-    if (!this.patrolTarget || Math.sqrt((this.x - this.patrolTarget.x)**2 + (this.y - this.patrolTarget.y)**2) < 25) {
-      const targets: Position[] = [
-        { x: queenPos.x, y: queenPos.y },
-        { x: grid.nestEntranceCol * CONFIG.CELL_SIZE, y: CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE }
-      ];
-      if (nurseries.length > 0) {
-        targets.push(...nurseries);
-      }
-      this.patrolTarget = targets[Math.floor(Math.random() * targets.length)];
-      this.currentPath = null; // force recalculate path
-    }
-
-    this.desiredAngle = this.getAngleTowardsTarget(grid, this.patrolTarget.x, this.patrolTarget.y);
-    this.desiredPheromone = 'none';
   }
 }

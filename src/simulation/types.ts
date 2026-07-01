@@ -127,6 +127,69 @@ export const CONFIG = {
 
 export const STARTING_CHAMBER_CENTER_ROW = CONFIG.SKY_HEIGHT + 34;
 
+// --- Role Behavior Interfaces ---
+
+import type { WorldGrid } from './Grid';
+import type { PheromoneGrid } from './Pheromones';
+import type { BroodManager } from './BroodManager';
+import type { Threat } from './Threat';
+
+/**
+ * The narrow contract that role behavior modules receive each tick.
+ * Ant implements this interface so behaviors call ctx.* without importing Ant directly.
+ */
+export interface AntContext {
+  // Identity & position
+  readonly id: string;
+  readonly num: number;
+  x: number;
+  y: number;
+  angle: number;
+  readonly role: AntRole;
+  state: AntState;
+
+  // Resources & cargo
+  energy: number;
+  cargo: 'None' | 'Food' | 'Dirt';
+  cargoFoodType: FoodType | undefined;
+  hasCargo: boolean;
+
+  // Brood carrying
+  targetBroodId: string | null;
+  isHoldingBrood: boolean;
+
+  // Steering outputs (set by behaviors, consumed by neural steering)
+  desiredAngle: number;
+  desiredPheromone: 'food' | 'home' | 'danger' | 'none';
+
+  // Pathfinding & timers
+  currentPath: Position[] | null;
+  collisionCooldown: number;
+  collisionTimer: number;
+  diggingChamberTimer: number;
+  diggingAngle: number;
+  targetDropOffset: number | undefined;
+  patrolTarget: Position | null;
+  targetThreatId: string | null;
+
+  // Fitness tracking
+  deliveries: number;
+  collisions: number;
+
+  // Domain references
+  getAngleToTarget(grid: WorldGrid, targetX: number, targetY: number): number;
+
+  // Helpers
+  addDelivery(): void;
+}
+
+/**
+ * Interface that every role behavior module must implement.
+ */
+export interface RoleBehavior {
+  update(ctx: AntContext, grid: WorldGrid, pheromones: PheromoneGrid, stockpile: { food: number }, broodList: readonly Brood[], queenPos: Position & { energy?: number }, activeExcavationStep: ExcavationStep | null, activeExcavationTarget: Position | null, nurseries: Position[], foodStorages: Position[], broodManager: BroodManager, speedMultiplier: number, threats: Threat[], spawnDebris?: (x: number, y: number, color: string, count?: number) => void): void;
+}
+
 export interface ExcavationStep {
   name: string;
   minCol: number;
