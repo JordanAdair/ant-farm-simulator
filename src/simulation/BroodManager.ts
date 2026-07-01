@@ -183,51 +183,6 @@ export class BroodManager {
     });
   }
 
-  /**
-   * Compressed offline brood lifecycle update — runs simplified egg→larva→pupa→hatch
-   * progression for a given time step without the full simulation loop.
-   *
-   * Returns the number of ants that hatched during this step.
-   */
-  public updateOffline(
-    stepSizeSeconds: number,
-    nurses: number,
-    consumeFood: (amount: number) => boolean,
-    onHatch: (x: number, y: number) => void
-  ): number {
-    let hatchCount = 0;
-    for (let i = this._broodList.length - 1; i >= 0; i--) {
-      const b = this._broodList[i];
-
-      if (b.type === 'Egg') {
-        b.progress += (100 / CONFIG.EGG_HATCH_TIME) * stepSizeSeconds;
-        if (b.progress >= 100) {
-          b.type = 'Larva';
-          b.progress = 0;
-          b.needsFood = true;
-        }
-      } else if (b.type === 'Larva') {
-        if (b.needsFood && nurses > 0 && consumeFood(1)) {
-          b.needsFood = false;
-          b.progress += 25;
-        }
-        b.progress += (100 / CONFIG.LARVA_GROWTH_TIME) * stepSizeSeconds * (b.needsFood ? 0.2 : 1.0);
-        if (b.progress >= 100) {
-          b.type = 'Pupa';
-          b.progress = 0;
-        }
-      } else if (b.type === 'Pupa') {
-        b.progress += (100 / CONFIG.PUPA_HATCH_TIME) * stepSizeSeconds;
-        if (b.progress >= 100) {
-          hatchCount++;
-          onHatch(b.x, b.y);
-          this._broodList.splice(i, 1);
-        }
-      }
-    }
-    return hatchCount;
-  }
-
   // ---------------------------------------------------------------------------
   // Lifecycle (internal mutations — BroodManager is the sole owner)
   // ---------------------------------------------------------------------------
