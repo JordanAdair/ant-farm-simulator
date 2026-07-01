@@ -3,6 +3,7 @@ import type { Brood } from './types';
 import { WorldGrid } from './Grid';
 import { PheromoneGrid } from './Pheromones';
 import { Ant } from './Ant';
+import { BroodManager } from './BroodManager';
 import { steerTowardsAngle, moveAndAvoidObstacles } from './Locomotion';
 import type { LocomotionEntity } from './Locomotion';
 import { findPath } from './Pathfinder';
@@ -54,7 +55,7 @@ export class Threat implements LocomotionEntity {
     }
   }
 
-  private findTarget(ants: Ant[], broodList: Brood[], queen: any) {
+  private findTarget(ants: Ant[], broodList: readonly Brood[], queen: any) {
     const skyHeightY = CONFIG.SKY_HEIGHT * CONFIG.CELL_SIZE;
     
     // Spiders target the Queen, any brood, or closest Ant
@@ -160,11 +161,12 @@ export class Threat implements LocomotionEntity {
     grid: WorldGrid,
     pheromones: PheromoneGrid,
     ants: Ant[],
-    broodList: Brood[],
+    broodList: readonly Brood[],
     queen: any,
     speedMultiplier: number,
     addLog: (m: string, c: 'system' | 'births' | 'deaths') => void,
-    spawnDebris?: (x: number, y: number, color: string, count?: number) => void
+    spawnDebris?: (x: number, y: number, color: string, count?: number) => void,
+    broodManager?: BroodManager
   ) {
     if (this.collisionCooldown > 0) {
       this.collisionCooldown -= speedMultiplier;
@@ -172,22 +174,22 @@ export class Threat implements LocomotionEntity {
     if (this.collisionTimer > 0) {
       this.collisionTimer -= speedMultiplier;
     }
-    
+
     this.legCycle += 0.25 * speedMultiplier;
     const speed = this.speed * speedMultiplier;
-    
+
     // Find target
     this.findTarget(ants, broodList, queen);
-    
+
     if (this.target) {
       this.state = 'Hunting';
       const dx = this.target.x - this.x;
       const dy = this.target.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (dist <= CONFIG.ATTACK_RANGE + 4) {
         // Combat! Deal damage
-        this.attackTarget(this.target, broodList, speedMultiplier, addLog, spawnDebris);
+        this.attackTarget(this.target, broodManager, speedMultiplier, addLog, spawnDebris);
         
         // Emit danger pheromones
         const col = Math.floor(this.x / CONFIG.CELL_SIZE);
@@ -265,7 +267,7 @@ export class Threat implements LocomotionEntity {
 
   private attackTarget(
     target: any,
-    broodList: Brood[],
+    broodManager: BroodManager | undefined,
     speedMultiplier: number,
     addLog: (m: string, c: 'system' | 'births' | 'deaths') => void,
     spawnDebris?: (x: number, y: number, color: string, count?: number) => void
@@ -283,20 +285,19 @@ export class Threat implements LocomotionEntity {
         target.deathReason = 'predator attack';
         addLog('The Queen has been slain by a predator! Colony Collapse is imminent.', 'deaths');
       }
-    } 
+    }
     // Ant target
     else if (target.role !== undefined) {
       target.health = Math.max(0, target.health - this.damage * speedMultiplier * 0.4);
       // Check if ant died (handled in Engine loop, but this deals damage)
-    } 
+    }
     // Brood target
     else if (target.type !== undefined) {
-      target.progress = Math.max(0, target.progress - 1.5 * speedMultiplier);
-      if (target.progress <= 0) {
-        const idx = broodList.findIndex(b => b.id === target.id);
-        if (idx !== -1) {
-          broodList.splice(idx, 1);
+      if (broodManager) {
+        const destroyed = broodManager.damageBrood(target.id, 1.5 * speedMultiplier);
+        if (destroyed) {
           addLog(`A ${this.type.toLowerCase()} devoured a colony ${target.type.toLowerCase()} in the nursery!`, 'deaths');
+          this.target = null; // target is gone
         }
       }
     }

@@ -3,19 +3,243 @@ import type { Brood, Position } from './types';
 import { WorldGrid } from './Grid';
 
 export class BroodManager {
-  public broodList: Brood[] = [];
+  private _broodList: Brood[] = [];
   public nurseryCapacity: number = 15;
 
+  /** Read-only snapshot of all brood items for callers that need to iterate. */
+  public get broodList(): readonly Brood[] {
+    return this._broodList;
+  }
+
   constructor() {}
+
+  // ---------------------------------------------------------------------------
+  // Intent-named mutation methods — the ONLY way external code may mutate brood
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Replace the entire brood list — used when restoring saved state (e.g. offline progression).
+   * All items are treated as authoritative and replace whatever was previously tracked.
+   */
+  public seedBrood(items: Brood[]): void {
+    this._broodList = items.slice(); // defensive copy
+  }
+
+  /**
+   * Add a single brood item directly — used by offline progression to lay eggs without
+   * going through the full Queen-motion simulation.
+   */
+  public addBrood(item: Brood): void {
+    this._broodList.push(item);
+  }
+
+  /**
+   * Remove the last brood item from the list (e.g. mite attrition during offline time).
+   * Returns the removed item, or undefined if the list was empty.
+   */
+  public removeLastBrood(): Brood | undefined {
+    return this._broodList.pop();
+  }
+
+  /**
+   * Remove and return the brood item at the given index — used by offline progression
+   * when a pupa hatches and the item must be removed by index during an iteration loop.
+   */
+  public removeBroodAt(index: number): Brood | undefined {
+    if (index < 0 || index >= this._broodList.length) return undefined;
+    return this._broodList.splice(index, 1)[0];
+  }
+
+  /**
+   * Mark a brood item as being carried by a nurse.
+   * Returns true if the brood was found and not already carried.
+   */
+  public pickUpBrood(id: string): boolean {
+    const brood = this._broodList.find(b => b.id === id);
+    if (!brood || brood.beingCarried) return false;
+    brood.beingCarried = true;
+    return true;
+  }
+
+  /**
+   * Place a carried brood item at the given position (drops it).
+   * Returns true if the brood was found and was being carried.
+   */
+  public placeBrood(id: string, pos: Position): boolean {
+    const brood = this._broodList.find(b => b.id === id);
+    if (!brood) return false;
+    brood.beingCarried = false;
+    brood.x = pos.x;
+    brood.y = pos.y;
+    return true;
+  }
+
+  /**
+   * Update the world position of a brood item being carried (called each frame
+   * while the nurse is walking toward the target nursery).
+   */
+  public moveBroodWithCarrier(id: string, pos: Position): boolean {
+    const brood = this._broodList.find(b => b.id === id);
+    if (!brood) return false;
+    brood.x = pos.x;
+    brood.y = pos.y;
+    return true;
+  }
+
+  /**
+   * Feed a hungry larva: advances its progress and clears the needsFood flag.
+   * Returns true if the larva was found and was hungry.
+   */
+  public feedLarva(id: string, progressBoost: number = 25): boolean {
+    const brood = this._broodList.find(b => b.id === id);
+    if (!brood || !brood.needsFood) return false;
+    brood.progress = Math.min(100, brood.progress + progressBoost);
+    brood.needsFood = false;
+    return true;
+  }
+
+  /**
+   * Return all brood items located in the given nursery (not being carried).
+   */
+  public getBroodInNursery(nursery: Position): readonly Brood[] {
+    return this._broodList.filter(b => {
+      if (b.beingCarried) return false;
+      const dx = b.x - nursery.x;
+      const dy = b.y - nursery.y;
+      return Math.sqrt(dx * dx + dy * dy) < 40;
+    });
+  }
+
+  /**
+   * Return a single brood item by id, or null if not found.
+   * Callers MUST NOT mutate the returned object — use the mutation methods above.
+   */
+  public getBroodById(id: string): Readonly<Brood> | null {
+    return this._broodList.find(b => b.id === id) ?? null;
+  }
+
+  /**
+   * Return a snapshot of all brood items that are hungry larvae (not being carried).
+   */
+  public getHungryLarvae(): readonly Brood[] {
+    return this._broodList.filter(b => b.type === 'Larva' && b.needsFood && !b.beingCarried);
+  }
+
+  /**
+   * Damage a brood item (e.g. from a predator attack). Returns true if the brood
+   * was destroyed (progress dropped to zero or below), in which case it is removed
+   * from the list.
+   */
+  public damageBrood(id: string, amount: number): boolean {
+    const idx = this._broodList.findIndex(b => b.id === id);
+    if (idx === -1) return false;
+    const brood = this._broodList[idx];
+    brood.progress = Math.max(0, brood.progress - amount);
+    if (brood.progress <= 0) {
+      this._broodList.splice(idx, 1);
+      return true; // destroyed
+    }
+    return false;
+  }
+
+  /**
+   * Return all brood items that are misplaced or in flooded nurseries — i.e. brood
+   * that a nurse should pick up and relocate.
+   */
+  public getStrayBrood(grid: WorldGrid, nurseries: Position[]): readonly Brood[] {
+    return this._broodList.filter(b => {
+      if (b.beingCarried) return false;
+
+      // 1. Is it in a water cell?
+      const bCol = Math.floor(b.x / CONFIG.CELL_SIZE);
+      const bRow = Math.floor(b.y / CONFIG.CELL_SIZE);
+      const bCell = grid.getCell(bCol, bRow);
+      if (bCell && bCell.type === 'Water') {
+        return true;
+      }
+
+      // 2. Is it in a flooded nursery?
+      for (const nursery of nurseries) {
+        const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
+        if (dist < 40 && isNurseryFlooded(grid, nursery)) {
+          return true;
+        }
+      }
+
+      // 3. Is it a misplaced egg or pupa (not in any dry nursery)?
+      if (b.type === 'Egg' || b.type === 'Pupa') {
+        let inDryNursery = false;
+        for (const nursery of nurseries) {
+          const dist = Math.sqrt((b.x - nursery.x) ** 2 + (b.y - nursery.y) ** 2);
+          if (dist < 40 && !isNurseryFlooded(grid, nursery)) {
+            inDryNursery = true;
+            break;
+          }
+        }
+        return !inDryNursery;
+      }
+
+      return false;
+    });
+  }
+
+  /**
+   * Compressed offline brood lifecycle update — runs simplified egg→larva→pupa→hatch
+   * progression for a given time step without the full simulation loop.
+   *
+   * Returns the number of ants that hatched during this step.
+   */
+  public updateOffline(
+    stepSizeSeconds: number,
+    nurses: number,
+    consumeFood: (amount: number) => boolean,
+    onHatch: (x: number, y: number) => void
+  ): number {
+    let hatchCount = 0;
+    for (let i = this._broodList.length - 1; i >= 0; i--) {
+      const b = this._broodList[i];
+
+      if (b.type === 'Egg') {
+        b.progress += (100 / CONFIG.EGG_HATCH_TIME) * stepSizeSeconds;
+        if (b.progress >= 100) {
+          b.type = 'Larva';
+          b.progress = 0;
+          b.needsFood = true;
+        }
+      } else if (b.type === 'Larva') {
+        if (b.needsFood && nurses > 0 && consumeFood(1)) {
+          b.needsFood = false;
+          b.progress += 25;
+        }
+        b.progress += (100 / CONFIG.LARVA_GROWTH_TIME) * stepSizeSeconds * (b.needsFood ? 0.2 : 1.0);
+        if (b.progress >= 100) {
+          b.type = 'Pupa';
+          b.progress = 0;
+        }
+      } else if (b.type === 'Pupa') {
+        b.progress += (100 / CONFIG.PUPA_HATCH_TIME) * stepSizeSeconds;
+        if (b.progress >= 100) {
+          hatchCount++;
+          onHatch(b.x, b.y);
+          this._broodList.splice(i, 1);
+        }
+      }
+    }
+    return hatchCount;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle (internal mutations — BroodManager is the sole owner)
+  // ---------------------------------------------------------------------------
 
   public update(
     dt: number,
     hatchAnt: (x: number, y: number) => void,
     addLog: (msg: string, cat: 'system' | 'births' | 'deaths') => void
   ): void {
-    for (let i = this.broodList.length - 1; i >= 0; i--) {
-      const brood = this.broodList[i];
-      
+    for (let i = this._broodList.length - 1; i >= 0; i--) {
+      const brood = this._broodList[i];
+
       if (brood.type === 'Egg') {
         brood.progress += (100 / CONFIG.EGG_HATCH_TIME / 60) * dt;
         if (brood.progress >= 100) {
@@ -40,15 +264,19 @@ export class BroodManager {
         brood.progress += (100 / CONFIG.PUPA_HATCH_TIME / 60) * dt;
         if (brood.progress >= 100) {
           hatchAnt(brood.x, brood.y);
-          this.broodList.splice(i, 1);
+          this._broodList.splice(i, 1);
           continue;
         }
       }
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Nursery query helpers (read-only)
+  // ---------------------------------------------------------------------------
+
   public getNurseryOccupancy(nursery: Position): number {
-    return this.broodList.filter(b => {
+    return this._broodList.filter(b => {
       if (b.beingCarried) return false;
       const dx = b.x - nursery.x;
       const dy = b.y - nursery.y;
@@ -89,7 +317,7 @@ export class BroodManager {
 
         if (grid.isValid(col, row) && grid.isWalkable(col, row)) {
           let tooClose = false;
-          for (const b of this.broodList) {
+          for (const b of this._broodList) {
             if (b.beingCarried) continue;
             const distSq = (b.x - tx) ** 2 + (b.y - ty) ** 2;
             if (distSq < 8 * 8) { // 8 pixels threshold
@@ -129,7 +357,7 @@ export class BroodManager {
         needsFood: false,
         beingCarried: false,
       };
-      this.broodList.push(newEgg);
+      this._broodList.push(newEgg);
       addLog('The Queen laid a new egg.', 'births');
       return;
     }
@@ -169,7 +397,7 @@ export class BroodManager {
       beingCarried: false,
     };
 
-    this.broodList.push(newEgg);
+    this._broodList.push(newEgg);
     addLog('The Queen laid a new egg.', 'births');
   }
 
@@ -201,4 +429,3 @@ export function isNurseryFlooded(grid: WorldGrid, nursery: Position): boolean {
   }
   return false;
 }
-

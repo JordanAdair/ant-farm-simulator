@@ -149,11 +149,11 @@ describe('Offline Progression Physics & Threats', () => {
     env.weather = 'Sunny';
 
     // Put some eggs in the brood list
-    colony.broodList = [
+    colony.broodManager.seedBrood([
       { id: 'b1', type: 'Egg', x: 100, y: 100, progress: 0, needsFood: false, beingCarried: false },
       { id: 'b2', type: 'Egg', x: 100, y: 100, progress: 0, needsFood: false, beingCarried: false },
       { id: 'b3', type: 'Egg', x: 100, y: 100, progress: 0, needsFood: false, beingCarried: false },
-    ];
+    ]);
     colony.ants = []; // no soldiers
 
     const mockEngine = {

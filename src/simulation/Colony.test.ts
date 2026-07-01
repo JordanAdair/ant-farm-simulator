@@ -149,7 +149,7 @@ describe('ColonyManager', () => {
 
     // Fill current nursery (n1) with 15 eggs
     for (let i = 0; i < 15; i++) {
-      colony.broodList.push({
+      colony.broodManager.addBrood({
         id: `egg-${i}`,
         type: 'Egg',
         x: n1.x,
