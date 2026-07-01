@@ -242,3 +242,95 @@ export const EXCAVATION_PLAN: ExcavationStep[] = [
   { name: 'Left Chamber (Tier 8)', minCol: 180, maxCol: 198, minRow: CONFIG.SKY_HEIGHT + 171, maxRow: CONFIG.SKY_HEIGHT + 175 },
   { name: 'Right Chamber (Tier 8)', minCol: 201, maxCol: 220, minRow: CONFIG.SKY_HEIGHT + 171, maxRow: CONFIG.SKY_HEIGHT + 175 },
 ];
+
+// ---------------------------------------------------------------------------
+// GameSnapshot — versioned, serialisable representation of all simulation state
+// required for offline-progression calculations.
+// ---------------------------------------------------------------------------
+
+export interface AntSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  angle: number;
+  role: AntRole;
+  state: AntState;
+  energy: number;
+  cargo: 'None' | 'Food' | 'Dirt';
+  num: number;
+  brain: AntBrain;
+  generation: number;
+  collisions: number;
+  deliveries: number;
+  age: number;
+  maxAge: number;
+  health: number;
+  submergedTime: number;
+}
+
+export interface QueenSnapshot {
+  x: number;
+  y: number;
+  energy: number;
+  eggTimer: number;
+  restTimer: number;
+  age: number;
+  maxAge: number;
+  health: number;
+  submergedTime: number;
+  isDead: boolean;
+  deathReason?: string;
+}
+
+export interface ClockSnapshot {
+  dayCount: number;
+  hour: number;
+  minute: number;
+  minuteFraction: number;
+}
+
+export interface WeatherSnapshot {
+  weather: 'Sunny' | 'Rainy';
+  weatherTimer: number;
+  weatherTargetDuration: number;
+  weatherQueue: { type: 'Sunny' | 'Rainy'; durationFrames: number }[];
+}
+
+export interface GameSnapshot {
+  /** Increment this whenever the shape of GameSnapshot changes. */
+  version: number;
+  timestamp: number;
+
+  // World grid (serialised as a compact column string)
+  gridStr: string;
+
+  // Grid dimensions — required so offline code never needs to touch engine.grid
+  cols: number;
+  rows: number;
+
+  // Colony-level fields
+  totalDirtDugGlobal: number;
+  maxPopulation: number;
+  maxGenerationReached: number;
+  excavationPlan: ExcavationStep[];
+  nextAntNum: number;
+  logs: LogEntry[];
+
+  // Queen
+  queen: QueenSnapshot;
+
+  // Brood
+  broodList: Brood[];
+
+  // Worker ants
+  ants: AntSnapshot[];
+
+  // Telemetry
+  telemetryHistory: TelemetryPoint[];
+
+  // Clock
+  clock: ClockSnapshot;
+
+  // Weather
+  weatherState: WeatherSnapshot;
+}
